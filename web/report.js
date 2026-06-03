@@ -10,7 +10,7 @@ const reportEls = {
   briefView: document.getElementById("briefView"),
   rawView: document.getElementById("rawView"),
   briefEmpty: document.getElementById("briefEmpty"),
-  briefFrame: document.getElementById("briefFrame"),
+  briefContent: document.getElementById("briefContent"),
   rawContent: document.getElementById("rawReportContent"),
 };
 
@@ -37,19 +37,44 @@ async function loadReport() {
   reportEls.meta.textContent = `${report.analysisDate} · ${report.depth} · ${statusText(report.status)}`;
   reportEls.rawContent.innerHTML = renderMarkdown(report.reportMarkdown || report.summary || report.error || "暂无报告内容。");
   renderBrief(report.briefHtml);
-  reportEls.generate.disabled = Boolean(report.briefHtml) || report.status !== "complete" || !report.reportMarkdown;
-  reportEls.generate.textContent = report.briefHtml ? "已生成分析简报" : "生成分析简报";
+  reportEls.generate.disabled = hasBrief(report) || report.status !== "complete" || !report.reportMarkdown;
+  reportEls.generate.textContent = hasBrief(report) ? "已生成分析简报" : "生成分析简报";
 }
 
 function renderBrief(html) {
-  if (!html) {
-    reportEls.briefEmpty.hidden = false;
-    reportEls.briefFrame.hidden = true;
+  const content = String(html || "").trim();
+  const hasContent = content.length > 0;
+  reportEls.briefEmpty.hidden = hasContent;
+  reportEls.briefContent.hidden = !hasContent;
+  if (!hasContent) {
+    reportEls.briefContent.innerHTML = "";
+    restoreBriefEmptyDefault();
     return;
   }
-  reportEls.briefEmpty.hidden = true;
-  reportEls.briefFrame.hidden = false;
-  reportEls.briefFrame.srcdoc = html;
+  reportEls.briefContent.innerHTML = extractBriefMarkup(content);
+}
+
+function extractBriefMarkup(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const styles = Array.from(doc.head.querySelectorAll("style"))
+      .map((node) => node.outerHTML)
+      .join("");
+    const body = doc.body?.innerHTML?.trim();
+    if (body) return `${styles}${body}`;
+  } catch {
+    // Fall back to raw HTML below.
+  }
+  return html;
+}
+
+function restoreBriefEmptyDefault() {
+  reportEls.briefEmpty.innerHTML =
+    '<h2>还没有分析简报</h2><p>点击“生成分析简报”，系统会调用 LLM，把原始报告改写成更容易阅读的 HTML 简报。</p>';
+}
+
+function hasBrief(report) {
+  return Boolean(String(report?.briefHtml || "").trim());
 }
 
 async function generateBrief() {
@@ -68,7 +93,8 @@ async function generateBrief() {
     reportEls.generate.textContent = "已生成分析简报";
   } catch (error) {
     reportEls.briefEmpty.hidden = false;
-    reportEls.briefFrame.hidden = true;
+    reportEls.briefContent.hidden = true;
+    reportEls.briefContent.innerHTML = "";
     reportEls.briefEmpty.innerHTML = `<h2>生成失败</h2><p>${escapeHTML(error.message)}</p>`;
     reportEls.generate.disabled = false;
     reportEls.generate.textContent = "生成分析简报";
@@ -82,6 +108,9 @@ function setReportView(view) {
   });
   reportEls.briefView.hidden = view !== "brief";
   reportEls.rawView.hidden = view !== "raw";
+  if (view === "brief" && reportState.report) {
+    renderBrief(reportState.report.briefHtml);
+  }
 }
 
 async function api(path, options = {}) {

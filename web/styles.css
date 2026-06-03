@@ -96,6 +96,20 @@ button {
   flex: 1;
 }
 
+.new-analysis-button {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-strong);
+  color: oklch(98% 0.004 178);
+  font-weight: 760;
+}
+
+.new-analysis-button:hover {
+  background: oklch(32% 0.095 178);
+}
+
 .section-heading {
   display: flex;
   align-items: center;
@@ -303,6 +317,107 @@ button {
   gap: 18px;
   padding-bottom: 28px;
   border-bottom: 1px solid var(--line);
+}
+
+.main.is-idle .topline {
+  display: none;
+}
+
+.main.is-idle .analysis-workspace,
+.analysis-workspace[hidden] {
+  display: none !important;
+}
+
+.main.is-active .analysis-entry,
+.main.is-active .disclaimer {
+  display: none;
+}
+
+.main.is-active .topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.main.is-active .topline-idle,
+.main.is-active .model-chip {
+  display: none;
+}
+
+.active-ticker-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 780;
+  line-height: 1.2;
+}
+
+.active-ticker-title[hidden] {
+  display: none !important;
+}
+
+.main.is-idle .analysis-entry {
+  grid-template-columns: minmax(280px, 1fr) 360px 168px;
+  max-width: none;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.main.is-idle .entry-guide {
+  display: block;
+}
+
+.main.is-active .entry-guide {
+  display: none;
+}
+
+.main.is-idle .disclaimer {
+  margin-top: 8px;
+}
+
+.entry-guide {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.main.is-active .analysis-workspace {
+  display: grid;
+  gap: 30px;
+}
+
+.analysis-workspace.is-visible .progress-section {
+  animation: revealBlock 0.45s ease 0.05s both;
+}
+
+.analysis-workspace.is-visible .report-section {
+  animation: revealBlock 0.45s ease 0.12s both;
+}
+
+.progress-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ghost-button.small,
+.retry-button {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@keyframes revealBlock {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ticker-field input {
@@ -849,6 +964,11 @@ button {
   display: none;
 }
 
+.brief-empty[hidden],
+.brief-content[hidden] {
+  display: none !important;
+}
+
 .brief-empty {
   display: grid;
   gap: 10px;
@@ -867,12 +987,18 @@ button {
   color: var(--muted);
 }
 
-.brief-frame {
+.brief-content {
   width: 100%;
-  min-height: 78vh;
+  min-height: 40vh;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: oklch(99% 0.004 178);
+  overflow: auto;
+}
+
+.brief-content .container {
+  max-width: 920px;
+  margin: 0 auto;
 }
 
 @media (max-width: 1060px) {
@@ -890,6 +1016,7 @@ button {
     max-height: 240px;
   }
 
+  .main.is-idle .analysis-entry,
   .analysis-entry {
     grid-template-columns: 1fr;
   }

@@ -17,6 +17,8 @@
           </div>
         </div>
 
+        <button id="newAnalysisButton" class="new-analysis-button" type="button">新增分析</button>
+
         <section class="history-panel">
           <div class="section-heading">
             <h2>历史报告</h2>
@@ -35,19 +37,20 @@
         </button>
       </aside>
 
-      <main class="main">
+      <main class="main is-idle" id="mainPanel">
         <header class="topline">
-          <div>
+          <div class="topline-idle">
             <p class="eyebrow">可信环境内部署</p>
             <h2>输入股票代码，交给多智能体分析</h2>
           </div>
+          <h2 id="activeTickerTitle" class="active-ticker-title" hidden></h2>
           <div class="model-chip" id="modelChip">DeepSeek · deepseek-v4-pro</div>
         </header>
 
         <section class="analysis-entry" aria-label="新建分析">
           <label class="ticker-field">
             <span>股票代码</span>
-            <input id="tickerInput" type="text" inputmode="latin" value="AAPL" aria-label="股票代码">
+            <input id="tickerInput" type="text" inputmode="latin" value="" placeholder="例如 AAPL" aria-label="股票代码">
           </label>
 
           <div class="depth-group" role="radiogroup" aria-label="分析深度">
@@ -66,17 +69,23 @@
           </div>
 
           <button id="startButton" class="primary-button" type="button">开始分析</button>
+
+          <p class="entry-guide">输入美股代码，点击「开始分析」后，多智能体将依次完成市场、情绪、新闻与基本面等分析，并生成可读报告。</p>
         </section>
 
         <p class="disclaimer">仅供研究参考，不构成投资建议。</p>
 
+        <div id="analysisWorkspace" class="analysis-workspace" hidden>
         <section class="progress-section" aria-label="实时进度">
           <div class="section-heading wide">
             <div>
               <h2>实时进度</h2>
               <p id="currentJobText">尚未开始分析</p>
             </div>
-            <span id="jobStatus" class="status-pill">待开始</span>
+            <div class="progress-heading-actions">
+              <span id="jobStatus" class="status-pill">待开始</span>
+              <button id="retryButton" class="ghost-button small retry-button" type="button" hidden>重新分析</button>
+            </div>
           </div>
 
           <ol class="stage-line" id="stageLine">
@@ -113,12 +122,13 @@
           <div id="reportActions" class="report-actions is-empty">
             <p>暂无已选择报告。</p>
             <div class="report-action-buttons">
-              <button id="openReportPageButton" class="primary-button small" type="button" disabled>打开查看报告</button>
+              <button id="openReportPageButton" class="primary-button small" type="button" disabled>打开查看原始报告</button>
               <button id="generateBriefButton" class="ghost-button" type="button" disabled>生成分析简报</button>
             </div>
             <span id="briefStatus" class="field-note"></span>
           </div>
         </section>
+        </div>
       </main>
     </div>
 

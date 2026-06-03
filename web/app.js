@@ -5,14 +5,20 @@ const state = {
   eventSource: null,
   completedStages: new Set(),
   activeReport: null,
+  viewMode: "idle",
 };
 
 const els = {
+  mainPanel: document.getElementById("mainPanel"),
+  analysisWorkspace: document.getElementById("analysisWorkspace"),
+  newAnalysisButton: document.getElementById("newAnalysisButton"),
   historySearch: document.getElementById("historySearch"),
   historyList: document.getElementById("historyList"),
   historyCount: document.getElementById("historyCount"),
+  activeTickerTitle: document.getElementById("activeTickerTitle"),
   tickerInput: document.getElementById("tickerInput"),
   startButton: document.getElementById("startButton"),
+  retryButton: document.getElementById("retryButton"),
   currentJobText: document.getElementById("currentJobText"),
   jobStatus: document.getElementById("jobStatus"),
   logList: document.getElementById("logList"),
@@ -59,6 +65,7 @@ function init() {
   bindEvents();
   loadSettings();
   loadReports();
+  setAnalysisView("idle");
 }
 
 function bindEvents() {
@@ -74,9 +81,12 @@ function bindEvents() {
     button.addEventListener("click", () => setLogTab(button.dataset.logTab));
   });
 
+  els.newAnalysisButton.addEventListener("click", startNewAnalysis);
+
   els.historySearch.addEventListener("input", debounce(loadReports, 220));
   els.tickerInput.addEventListener("input", markManualAnalysis);
   els.startButton.addEventListener("click", startAnalysis);
+  els.retryButton.addEventListener("click", startAnalysis);
   els.openReportPageButton.addEventListener("click", openSelectedReportPage);
   els.generateBriefButton.addEventListener("click", generateSelectedBrief);
   els.settingsButton.addEventListener("click", openSettings);
@@ -201,13 +211,71 @@ function clearActiveReport() {
     state.eventSource = null;
   }
   els.tickerInput.value = "";
-  els.currentJobText.textContent = "等待开始";
+  updateActiveTickerTitle("");
+  els.currentJobText.textContent = "尚未开始分析";
   els.jobStatus.textContent = "待开始";
   els.reportSubhead.textContent = "选择左侧历史报告，或完成一次新分析后查看。";
   updateReportActions(null);
   renderLogs([]);
   syncStagesFromLogs([]);
   updateStartButton();
+  updateRetryButton();
+  setAnalysisView("idle");
+}
+
+function updateActiveTickerTitle(ticker) {
+  const value = String(ticker || "").trim().toUpperCase();
+  els.activeTickerTitle.textContent = value;
+  els.activeTickerTitle.hidden = !value;
+}
+
+function updateRetryButton() {
+  const showRetry = state.viewMode === "active" && state.activeReport && state.activeReport.status === "error";
+  els.retryButton.hidden = !showRetry;
+}
+
+function startNewAnalysis() {
+  if (state.eventSource) {
+    state.eventSource.close();
+    state.eventSource = null;
+  }
+  state.activeReportId = null;
+  state.activeReport = null;
+  els.tickerInput.value = "";
+  setDepth("shallow", { keepRetry: true });
+  els.currentJobText.textContent = "尚未开始分析";
+  els.jobStatus.textContent = "待开始";
+  els.reportSubhead.textContent = "选择左侧历史报告，或完成一次新分析后查看。";
+  updateReportActions(null);
+  renderLogs([]);
+  syncStagesFromLogs([]);
+  updateStartButton();
+  els.startButton.disabled = false;
+  updateActiveTickerTitle("");
+  updateRetryButton();
+  setAnalysisView("idle");
+  els.tickerInput.focus();
+  loadReports();
+}
+
+function setAnalysisView(mode) {
+  state.viewMode = mode;
+  const idle = mode === "idle";
+  els.mainPanel.classList.toggle("is-idle", idle);
+  els.mainPanel.classList.toggle("is-active", !idle);
+  if (idle) {
+    els.analysisWorkspace.hidden = true;
+    els.analysisWorkspace.classList.remove("is-visible");
+    updateActiveTickerTitle("");
+    updateRetryButton();
+    return;
+  }
+  els.analysisWorkspace.hidden = false;
+  if (!els.analysisWorkspace.classList.contains("is-visible")) {
+    void els.analysisWorkspace.offsetWidth;
+    els.analysisWorkspace.classList.add("is-visible");
+  }
+  updateRetryButton();
 }
 
 async function openReport(id) {
@@ -215,14 +283,17 @@ async function openReport(id) {
   state.activeReportId = id;
   state.activeReport = report;
   els.tickerInput.value = report.ticker;
+  updateActiveTickerTitle(report.ticker);
   setDepth(depthKey(report.depth), { keepRetry: true });
   updateStartButton();
+  updateRetryButton();
   els.reportSubhead.textContent = `${report.ticker} · ${report.analysisDate} · ${report.depth}`;
   updateReportActions(report);
   renderLogs(report.logs || []);
   syncStagesFromLogs(report.logs || []);
   els.currentJobText.textContent = `${report.ticker} 历史报告`;
   els.jobStatus.textContent = statusText(report.status);
+  setAnalysisView("active");
   loadReports();
 }
 
@@ -232,7 +303,10 @@ async function startAnalysis() {
     els.tickerInput.focus();
     return;
   }
+  updateActiveTickerTitle(ticker);
+  setAnalysisView("active");
   els.startButton.disabled = true;
+  els.retryButton.hidden = true;
   resetRunUI();
   try {
     const retrying = state.activeReport && state.activeReport.status === "error";
@@ -255,6 +329,7 @@ async function startAnalysis() {
     els.jobStatus.textContent = "失败";
     els.startButton.disabled = false;
     updateStartButton();
+    updateRetryButton();
   }
 }
 
@@ -282,7 +357,9 @@ async function handleEvent(event) {
   if (event.type === "error") {
     els.jobStatus.textContent = "失败";
     els.startButton.disabled = false;
+    if (state.activeReport) state.activeReport.status = "error";
     updateStartButton();
+    updateRetryButton();
     if (state.eventSource) state.eventSource.close();
     loadReports();
   }
