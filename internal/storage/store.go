@@ -160,6 +160,18 @@ func (s *Store) Report(id string) (Report, bool) {
 	return Report{}, false
 }
 
+func (s *Store) DeleteReport(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.state.Reports {
+		if s.state.Reports[i].ID == id {
+			s.state.Reports = append(s.state.Reports[:i], s.state.Reports[i+1:]...)
+			return s.saveLocked()
+		}
+	}
+	return os.ErrNotExist
+}
+
 func (s *Store) Reports(query string) []Report {
 	s.mu.Lock()
 	defer s.mu.Unlock()

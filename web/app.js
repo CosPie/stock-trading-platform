@@ -151,17 +151,63 @@ async function loadReports() {
   els.historyList.innerHTML = reports
     .map(
       (report) => `
-        <button class="history-item ${report.id === state.activeReportId ? "is-active" : ""}" data-id="${escapeAttr(report.id)}" type="button">
-          <strong>${escapeHTML(report.ticker)}</strong>
-          <span>${escapeHTML(report.analysisDate)} · ${escapeHTML(report.depth)} · ${statusText(report.status)}</span>
-          ${report.status === "error" ? '<em>可重新分析</em>' : ""}
-        </button>
+        <div class="history-row ${report.id === state.activeReportId ? "is-active" : ""}">
+          <button class="history-item" data-id="${escapeAttr(report.id)}" type="button">
+            <strong>${escapeHTML(report.ticker)}</strong>
+            <span>${escapeHTML(report.analysisDate)} · ${escapeHTML(report.depth)} · ${statusText(report.status)}</span>
+            ${report.status === "error" ? '<em>可重新分析</em>' : ""}
+          </button>
+          ${
+            report.status === "running"
+              ? ""
+              : `<button class="history-delete" type="button" aria-label="删除 ${escapeAttr(report.ticker)} 报告" data-id="${escapeAttr(report.id)}" data-ticker="${escapeAttr(report.ticker)}" title="删除">×</button>`
+          }
+        </div>
       `,
     )
     .join("");
   els.historyList.querySelectorAll(".history-item").forEach((button) => {
     button.addEventListener("click", () => openReport(button.dataset.id));
   });
+  els.historyList.querySelectorAll(".history-delete").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteReport(button.dataset.id, button.dataset.ticker);
+    });
+  });
+}
+
+async function deleteReport(id, ticker) {
+  const label = ticker || state.activeReport?.ticker || id;
+  if (!window.confirm(`确定删除 ${label} 的历史报告吗？此操作不可恢复。`)) {
+    return;
+  }
+  try {
+    await api(`/api/reports/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (state.activeReportId === id) {
+      clearActiveReport();
+    }
+    await loadReports();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+function clearActiveReport() {
+  state.activeReportId = null;
+  state.activeReport = null;
+  if (state.eventSource) {
+    state.eventSource.close();
+    state.eventSource = null;
+  }
+  els.tickerInput.value = "";
+  els.currentJobText.textContent = "等待开始";
+  els.jobStatus.textContent = "待开始";
+  els.reportSubhead.textContent = "选择左侧历史报告，或完成一次新分析后查看。";
+  updateReportActions(null);
+  renderLogs([]);
+  syncStagesFromLogs([]);
+  updateStartButton();
 }
 
 async function openReport(id) {

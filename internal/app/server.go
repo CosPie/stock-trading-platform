@@ -79,6 +79,20 @@ func registerRoutes(f *fiber.App, opts Options) {
 		return c.JSON(report)
 	})
 
+	f.Delete("/api/reports/:id", func(c fiber.Ctx) error {
+		report, ok := opts.Store.Report(c.Params("id"))
+		if !ok {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "报告不存在"})
+		}
+		if report.Status == "running" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "分析进行中的报告不能删除"})
+		}
+		if err := opts.Store.DeleteReport(report.ID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"ok": true})
+	})
+
 	f.Post("/api/reports/:id/brief", func(c fiber.Ctx) error {
 		report, ok := opts.Store.Report(c.Params("id"))
 		if !ok {
