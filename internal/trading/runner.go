@@ -100,8 +100,12 @@ func (r *Runner) Run(ctx context.Context, req RunRequest, emit EmitFunc) (RunRes
 		"TRADINGAGENTS_RESULTS_DIR="+resultsDir,
 		"TRADINGAGENTS_OUTPUT_LANGUAGE=Simplified Chinese",
 	)
-	if settings.LLM.APIKey != "" {
-		cmd.Env = append(cmd.Env, "DEEPSEEK_API_KEY="+settings.LLM.APIKey)
+	apiKey := strings.TrimSpace(settings.LLM.APIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	}
+	if apiKey != "" {
+		cmd.Env = append(cmd.Env, "DEEPSEEK_API_KEY="+apiKey)
 	}
 	if settings.LLM.BackendURL != "" {
 		cmd.Env = append(cmd.Env, "TRADINGAGENTS_LLM_BACKEND_URL="+settings.LLM.BackendURL)

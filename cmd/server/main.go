@@ -18,7 +18,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	dataDir := filepath.Join(root, "data")
+	dataDir := env("APP_DATA_DIR", filepath.Join(root, "data"))
 	store, err := storage.Open(filepath.Join(dataDir, "app_state.json"), root)
 	if err != nil {
 		log.Fatal(err)
@@ -28,7 +28,7 @@ func main() {
 	manager := jobs.NewManager(store, runner)
 
 	srv := app.New(app.Options{
-		Addr:    env("APP_ADDR", ":8080"),
+		Addr:    listenAddr(),
 		WebDir:  filepath.Join(root, "web"),
 		Store:   store,
 		Manager: manager,
@@ -46,4 +46,14 @@ func env(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func listenAddr() string {
+	if addr := os.Getenv("APP_ADDR"); addr != "" {
+		return addr
+	}
+	if port := os.Getenv("PORT"); port != "" {
+		return ":" + port
+	}
+	return ":8080"
 }

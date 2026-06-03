@@ -35,6 +35,7 @@ func Open(path string, root string) (*Store, error) {
 	if store.state.Settings.LLM.Provider == "" {
 		store.state.Settings = DefaultSettings(root)
 	}
+	applyEnvDefaults(&store.state.Settings, root)
 	return store, store.saveLocked()
 }
 
@@ -58,11 +59,27 @@ func DefaultSettings(root string) Settings {
 }
 
 func defaultPythonPath(root string) string {
-	venvPython := filepath.Join(root, ".venv", "bin", "python")
-	if _, err := os.Stat(venvPython); err == nil {
-		return venvPython
+	candidates := []string{
+		filepath.Join(root, ".venv", "bin", "python"),
+		"/opt/venv/bin/python",
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
 	}
 	return "python3"
+}
+
+func applyEnvDefaults(settings *Settings, root string) {
+	if settings.LLM.APIKey == "" {
+		if key := os.Getenv("DEEPSEEK_API_KEY"); key != "" {
+			settings.LLM.APIKey = key
+		}
+	}
+	if settings.Runtime.PythonPath == "" || settings.Runtime.PythonPath == "python3" {
+		settings.Runtime.PythonPath = defaultPythonPath(root)
+	}
 }
 
 func (s *Store) Settings() Settings {

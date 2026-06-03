@@ -96,6 +96,65 @@ git submodule update --remote third_party/tradingagents
 
 这是按可信内网环境设计的，无鉴权，不适合直接暴露到公网。
 
+## Docker 部署
+
+项目根目录已提供 `Dockerfile` 与 `docker-compose.yml`，镜像内同时包含 Go WebUI 与 TradingAgents Python 环境。
+
+### 前置条件
+
+克隆仓库时需要带上 submodule：
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd stock-trading-platform
+```
+
+如果已经克隆过，可执行：
+
+```bash
+git submodule update --init --recursive
+```
+
+### 本地 Docker Compose
+
+复制环境变量示例并填写 DeepSeek Key：
+
+```bash
+cp .env.example .env
+# 编辑 .env，设置 DEEPSEEK_API_KEY
+docker compose up -d --build
+```
+
+默认访问：
+
+```text
+http://localhost:8080
+```
+
+数据会持久化到 Docker volume `app-data`（挂载到容器内 `/app/data`）。
+
+### Coolify 部署
+
+1. 在 Coolify 新建 **Application**，选择 Git 仓库部署
+2. 构建方式选 **Dockerfile**，路径填 `./Dockerfile`
+3. 暴露端口设为 `8080`（Coolify 会自动注入 `PORT`，服务已兼容）
+4. 挂载持久化卷到 `/app/data`，保存设置与历史报告
+5. 在环境变量中配置：
+   - `DEEPSEEK_API_KEY`：DeepSeek API Key（首次启动会自动写入本地设置）
+   - 可选 `APP_ADDR`：监听地址，默认 `:8080`
+6. 健康检查路径建议设为 `/api/health`
+
+> 本服务无鉴权，部署到公网前请自行加反向代理认证或 VPN 访问控制。
+
+### 环境变量
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `APP_ADDR` | HTTP 监听地址 | `:8080` |
+| `PORT` | Coolify 等平台注入的端口 | 未设置时使用 `8080` |
+| `APP_DATA_DIR` | 数据目录 | `/app/data`（容器内） |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key | 空（也可在 WebUI 设置页保存） |
+
 ## 免责声明
 
 页面和报告均仅供研究参考，不构成投资建议。
