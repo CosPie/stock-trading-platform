@@ -145,6 +145,8 @@ func sanitizeHTML(html string) string {
 	html = strings.TrimSuffix(html, "```")
 	html = regexp.MustCompile(`(?is)<script.*?>.*?</script>`).ReplaceAllString(html, "")
 	html = regexp.MustCompile(`(?is)<iframe.*?>.*?</iframe>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`(?i)\son\w+\s*=\s*(['"]).*?\1`).ReplaceAllString(html, "")
+	// Go regexp (RE2) does not support backreferences; match each quote style separately.
+	html = regexp.MustCompile(`(?i)\son\w+\s*=\s*"[^"]*"`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`(?i)\son\w+\s*=\s*'[^']*'`).ReplaceAllString(html, "")
 	return strings.TrimSpace(html)
 }
