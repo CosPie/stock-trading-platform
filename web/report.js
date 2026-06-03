@@ -1,6 +1,6 @@
 const reportState = {
   report: null,
-  view: new URLSearchParams(window.location.search).get("view") || "brief",
+  view: new URLSearchParams(window.location.search).get("view") || "raw",
 };
 
 const reportEls = {

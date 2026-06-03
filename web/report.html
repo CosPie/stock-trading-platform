@@ -19,11 +19,11 @@
 
     <main class="report-page-main">
       <nav class="viewer-tabs" aria-label="报告视图">
-        <button class="viewer-tab is-active" type="button" data-view="brief">分析简报</button>
-        <button class="viewer-tab" type="button" data-view="raw">原始报告</button>
+        <button class="viewer-tab" type="button" data-view="brief">分析简报</button>
+        <button class="viewer-tab is-active" type="button" data-view="raw">原始报告</button>
       </nav>
 
-      <section id="briefView" class="report-view">
+      <section id="briefView" class="report-view" hidden>
         <div id="briefEmpty" class="brief-empty">
           <h2>还没有分析简报</h2>
           <p>点击“生成分析简报”，系统会调用 LLM，把原始报告改写成更容易阅读的 HTML 简报。</p>
@@ -31,7 +31,7 @@
         <iframe id="briefFrame" class="brief-frame" title="分析简报" sandbox hidden></iframe>
       </section>
 
-      <section id="rawView" class="report-view" hidden>
+      <section id="rawView" class="report-view">
         <article id="rawReportContent" class="report-content">
           <div class="empty-state">正在加载原始报告。</div>
         </article>
