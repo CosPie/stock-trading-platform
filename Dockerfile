@@ -33,7 +33,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     YF_DISABLE_CURL_CFFI=1 \
-    APP_ADDR=:8080
+    APP_ADDR=:16666
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
@@ -56,9 +56,9 @@ RUN useradd --create-home --uid 1000 appuser \
 
 USER appuser
 
-EXPOSE 8080
+EXPOSE 16666
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:16666/api/health')" || exit 1
 
 ENTRYPOINT ["/app/server"]

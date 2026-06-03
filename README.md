@@ -62,7 +62,7 @@ go run ./cmd/server
 默认访问：
 
 ```text
-http://localhost:8080
+http://localhost:16666
 ```
 
 也可以指定监听地址：
@@ -128,7 +128,7 @@ docker compose up -d --build
 默认访问：
 
 ```text
-http://localhost:8080
+http://localhost:16666
 ```
 
 数据会持久化到 Docker volume `app-data`（挂载到容器内 `/app/data`）。
@@ -137,11 +137,11 @@ http://localhost:8080
 
 1. 在 Coolify 新建 **Application**，选择 Git 仓库部署
 2. 构建方式选 **Dockerfile**，路径填 `./Dockerfile`
-3. 暴露端口设为 `8080`（Coolify 会自动注入 `PORT`，服务已兼容）
+3. 暴露端口设为 `16666`（Coolify 会自动注入 `PORT`，服务已兼容）
 4. 挂载持久化卷到 `/app/data`，保存设置与历史报告
 5. 在环境变量中配置：
    - `DEEPSEEK_API_KEY`：DeepSeek API Key（首次启动会自动写入本地设置）
-   - 可选 `APP_ADDR`：监听地址，默认 `:8080`
+   - 可选 `APP_ADDR`：监听地址，默认 `:16666`
 6. 健康检查路径建议设为 `/api/health`
 
 > 本服务无鉴权，部署到公网前请自行加反向代理认证或 VPN 访问控制。
@@ -150,8 +150,8 @@ http://localhost:8080
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `APP_ADDR` | HTTP 监听地址 | `:8080` |
-| `PORT` | Coolify 等平台注入的端口 | 未设置时使用 `8080` |
+| `APP_ADDR` | HTTP 监听地址 | `:16666` |
+| `PORT` | Coolify 等平台注入的端口 | 未设置时使用 `16666` |
 | `APP_DATA_DIR` | 数据目录 | `/app/data`（容器内） |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key | 空（也可在 WebUI 设置页保存） |
 

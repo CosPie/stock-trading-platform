@@ -4,9 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "${HOST_PORT:-16666}:16666"
     environment:
-      APP_ADDR: ":8080"
+      APP_ADDR: ":16666"
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     volumes:
       - app-data:/app/data
@@ -17,7 +17,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:16666/api/health')",
         ]
       interval: 30s
       timeout: 5s
