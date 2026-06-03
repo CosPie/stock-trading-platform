@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>报告查看 · TradingAgents</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="report-page">
+    <header class="report-page-header">
+      <a class="back-link" href="/">返回分析首页</a>
+      <div>
+        <p class="eyebrow">TradingAgents 报告</p>
+        <h1 id="reportTitle">报告查看</h1>
+        <p id="reportMeta">正在加载...</p>
+      </div>
+      <button id="generateBriefPageButton" class="primary-button small" type="button">生成分析简报</button>
+    </header>
+
+    <main class="report-page-main">
+      <nav class="viewer-tabs" aria-label="报告视图">
+        <button class="viewer-tab is-active" type="button" data-view="brief">分析简报</button>
+        <button class="viewer-tab" type="button" data-view="raw">原始报告</button>
+      </nav>
+
+      <section id="briefView" class="report-view">
+        <div id="briefEmpty" class="brief-empty">
+          <h2>还没有分析简报</h2>
+          <p>点击“生成分析简报”，系统会调用 LLM，把原始报告改写成更容易阅读的 HTML 简报。</p>
+        </div>
+        <iframe id="briefFrame" class="brief-frame" title="分析简报" sandbox hidden></iframe>
+      </section>
+
+      <section id="rawView" class="report-view" hidden>
+        <article id="rawReportContent" class="report-content">
+          <div class="empty-state">正在加载原始报告。</div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/report.js"></script>
+  </body>
+</html>

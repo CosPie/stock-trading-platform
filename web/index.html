@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TradingAgents 股票分析</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="历史报告">
+        <div class="brand">
+          <div class="brand-mark">TA</div>
+          <div>
+            <h1>股票分析</h1>
+            <p>TradingAgents</p>
+          </div>
+        </div>
+
+        <section class="history-panel">
+          <div class="section-heading">
+            <h2>历史报告</h2>
+            <span id="historyCount">0</span>
+          </div>
+          <label class="search-box">
+            <span>搜索</span>
+            <input id="historySearch" type="search" placeholder="股票或日期">
+          </label>
+          <div id="historyList" class="history-list" aria-live="polite"></div>
+        </section>
+
+        <button id="settingsButton" class="settings-button" type="button" aria-haspopup="dialog">
+          <span class="settings-symbol" aria-hidden="true">&#9881;</span>
+          <span>设置</span>
+        </button>
+      </aside>
+
+      <main class="main">
+        <header class="topline">
+          <div>
+            <p class="eyebrow">可信环境内部署</p>
+            <h2>输入股票代码，交给多智能体分析</h2>
+          </div>
+          <div class="model-chip" id="modelChip">DeepSeek · deepseek-v4-pro</div>
+        </header>
+
+        <section class="analysis-entry" aria-label="新建分析">
+          <label class="ticker-field">
+            <span>股票代码</span>
+            <input id="tickerInput" type="text" inputmode="latin" value="AAPL" aria-label="股票代码">
+          </label>
+
+          <div class="depth-group" role="radiogroup" aria-label="分析深度">
+            <button class="depth-option is-active" type="button" data-depth="shallow" role="radio" aria-checked="true">
+              <strong>浅度</strong>
+              <span>更快</span>
+            </button>
+            <button class="depth-option" type="button" data-depth="medium" role="radio" aria-checked="false">
+              <strong>中度</strong>
+              <span>更稳</span>
+            </button>
+            <button class="depth-option" type="button" data-depth="deep" role="radio" aria-checked="false">
+              <strong>深度</strong>
+              <span>更细</span>
+            </button>
+          </div>
+
+          <button id="startButton" class="primary-button" type="button">开始分析</button>
+        </section>
+
+        <p class="disclaimer">仅供研究参考，不构成投资建议。</p>
+
+        <section class="progress-section" aria-label="实时进度">
+          <div class="section-heading wide">
+            <div>
+              <h2>实时进度</h2>
+              <p id="currentJobText">尚未开始分析</p>
+            </div>
+            <span id="jobStatus" class="status-pill">待开始</span>
+          </div>
+
+          <ol class="stage-line" id="stageLine">
+            <li data-stage="市场分析">市场分析</li>
+            <li data-stage="情绪分析">情绪分析</li>
+            <li data-stage="新闻分析">新闻分析</li>
+            <li data-stage="基本面分析">基本面分析</li>
+            <li data-stage="研究团队">研究团队</li>
+            <li data-stage="交易员">交易员</li>
+            <li data-stage="风控团队">风控团队</li>
+            <li data-stage="组合经理">组合经理</li>
+          </ol>
+
+          <div class="progress-tabs" role="tablist" aria-label="运行信息">
+            <button class="progress-tab is-active" type="button" data-log-tab="logs" role="tab" aria-selected="true">运行日志</button>
+            <button class="progress-tab" type="button" data-log-tab="errors" role="tab" aria-selected="false">错误详情 <span id="errorCount">0</span></button>
+          </div>
+
+          <div id="logList" class="log-list" data-log-panel="logs" aria-live="polite">
+            <div class="empty-state">实时日志会显示在这里。</div>
+          </div>
+          <div id="errorList" class="log-list error-list" data-log-panel="errors" hidden>
+            <div class="empty-state">暂无错误详情。</div>
+          </div>
+        </section>
+
+        <section class="report-section" aria-label="报告操作">
+          <div class="section-heading wide">
+            <div>
+              <h2>报告查看</h2>
+              <p id="reportSubhead">选择左侧历史报告，或完成一次新分析后查看。</p>
+            </div>
+          </div>
+          <div id="reportActions" class="report-actions is-empty">
+            <p>暂无已选择报告。</p>
+            <div class="report-action-buttons">
+              <button id="openReportPageButton" class="primary-button small" type="button" disabled>打开查看报告</button>
+              <button id="generateBriefButton" class="ghost-button" type="button" disabled>生成分析简报</button>
+            </div>
+            <span id="briefStatus" class="field-note"></span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="settingsModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+      <div class="settings-modal">
+        <aside class="settings-nav">
+          <div>
+            <p class="eyebrow">系统设置</p>
+            <h2 id="settingsTitle">设置</h2>
+          </div>
+          <button class="settings-tab is-active" type="button" data-tab="llm">LLM 模型</button>
+          <button class="settings-tab" type="button" data-tab="api">API Key</button>
+          <button class="settings-tab" type="button" data-tab="runtime">运行路径</button>
+          <button class="settings-tab" type="button" data-tab="ui">界面偏好</button>
+        </aside>
+
+        <section class="settings-content">
+          <div class="modal-title-row">
+            <div>
+              <h3 id="settingsPanelTitle">LLM 模型</h3>
+              <p id="settingsPanelHint">配置 DeepSeek 模型，保存后下一次分析生效。</p>
+            </div>
+            <button id="closeSettings" class="ghost-button" type="button">关闭</button>
+          </div>
+
+          <form id="settingsForm" class="settings-form">
+            <div class="tab-panel is-active" data-panel="llm">
+              <label>
+                <span>Provider</span>
+                <input id="providerInput" type="text" value="deepseek" readonly>
+              </label>
+              <label>
+                <span>快速模型</span>
+                <select id="quickModelInput">
+                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                </select>
+              </label>
+              <label>
+                <span>深度模型</span>
+                <select id="deepModelInput">
+                  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                </select>
+              </label>
+              <label>
+                <span>Temperature</span>
+                <input id="temperatureInput" type="number" min="0" max="2" step="0.1" placeholder="留空使用默认">
+              </label>
+            </div>
+
+            <div class="tab-panel" data-panel="api">
+              <label>
+                <span>DeepSeek API Key</span>
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-...">
+              </label>
+              <p class="field-note">API Key 会保存在本机 data/app_state.json，适合可信内网环境。</p>
+            </div>
+
+            <div class="tab-panel" data-panel="runtime">
+              <label>
+                <span>Python 命令</span>
+                <input id="pythonPathInput" type="text" placeholder="python3">
+              </label>
+              <label>
+                <span>TradingAgents 目录</span>
+                <input id="tradingAgentsDirInput" type="text">
+              </label>
+              <label>
+                <span>运行结果目录</span>
+                <input id="resultsDirInput" type="text">
+              </label>
+            </div>
+
+            <div class="tab-panel" data-panel="ui">
+              <label class="checkbox-row">
+                <input id="largeTextInput" type="checkbox">
+                <span>使用更大的界面字体</span>
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <span id="settingsMessage" aria-live="polite"></span>
+              <button class="ghost-button" type="button" id="cancelSettings">取消</button>
+              <button class="primary-button small" type="submit">保存设置</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
