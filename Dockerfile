@@ -12,6 +12,19 @@ COPY internal/ internal/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
+FROM node:22-alpine AS web-builder
+
+WORKDIR /src
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY frontend/ frontend/
+COPY postcss.config.cjs tailwind.config.cjs vite.config.js ./
+RUN npm run build \
+ && mkdir -p /out/web \
+ && cp -R web/. /out/web/
+
 FROM python:3.12-slim AS py-builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -55,7 +68,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 
 COPY --from=go-builder /out/server /app/server
-COPY web/ /app/web/
+COPY --from=web-builder /out/web/ /app/web/
 COPY scripts/ /app/scripts/
 COPY third_party/tradingagents/ /app/third_party/tradingagents/
 
