@@ -59,6 +59,13 @@ GLOBAL_NEWS_SOURCES = (
     RSSSource("财新-金融市场", "https://finance.caixin.com/market/rss/100300179.xml", 5, "macro"),
 )
 
+PUBLIC_GLOBAL_QUERIES = (
+    "Federal Reserve interest rates inflation",
+    "S&P 500 earnings GDP economic outlook",
+    "geopolitical risk trade war sanctions",
+    "oil commodities supply chain energy markets",
+)
+
 _A_SHARE_RE = re.compile(r"(?<!\d)(?:SH|SZ)?(\d{6})(?:\.(?:SS|SH|SZ|BJ))?(?!\d)", re.I)
 _HK_RE = re.compile(r"(?<!\d)(\d{4,5})(?:\.HK)?(?!\d)", re.I)
 _TAGS_RE = re.compile(r"<[^>]+>")
@@ -144,6 +151,75 @@ def get_global_news_china(
     )
 
 
+def get_news_public_rss(ticker: str, start_date: str, end_date: str) -> str:
+    """Fetch ticker news from public RSS search feeds as a no-key fallback."""
+    query = os.getenv(
+        "TRADINGAGENTS_PUBLIC_NEWS_QUERY_TEMPLATE",
+        '"{ticker}" stock OR shares OR earnings OR analyst',
+    ).format(ticker=ticker.strip().upper())
+    start = _parse_date(start_date) or (datetime.now(timezone.utc) - timedelta(days=7))
+    end = _parse_date(end_date) or datetime.now(timezone.utc)
+    limit = _env_int("TRADINGAGENTS_PUBLIC_NEWS_LIMIT", 12)
+
+    articles, note = _fetch_google_news(query, "Google News RSS", start, end, weight=3)
+    articles = _dedupe_articles(articles)
+    articles.sort(key=lambda item: (item.weight, item.published), reverse=True)
+
+    if not articles:
+        return (
+            f"## Public RSS news for {ticker}, from {start_date} to {end_date}\n\n"
+            "<no public RSS headlines matched this ticker. Keep this as a data-limit note; "
+            "do not infer positive or negative sentiment from silence.>\n"
+            + _format_notes([note])
+        )
+
+    return (
+        f"## Public RSS news for {ticker}, from {start_date} to {end_date}\n\n"
+        "Source: public RSS search feeds. Treat these headlines as lower-confidence "
+        "fallback context when primary market-data news providers are unavailable.\n\n"
+        + _format_articles(articles[:limit])
+        + _format_notes([note])
+    )
+
+
+def get_global_news_public_rss(
+    curr_date: str,
+    look_back_days: int | None = None,
+    limit: int | None = None,
+) -> str:
+    """Fetch global macro/market news from public RSS search feeds."""
+    days = look_back_days or _env_int("TRADINGAGENTS_PUBLIC_GLOBAL_LOOKBACK_DAYS", 7)
+    max_items = limit or _env_int("TRADINGAGENTS_PUBLIC_GLOBAL_NEWS_LIMIT", 10)
+    end = _parse_date(curr_date) or datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    query_text = os.getenv("TRADINGAGENTS_PUBLIC_GLOBAL_NEWS_QUERIES", "")
+    queries = [part.strip() for part in query_text.split("|") if part.strip()] or list(PUBLIC_GLOBAL_QUERIES)
+
+    articles = []
+    fetch_notes = []
+    for query in queries:
+        fetched, note = _fetch_google_news(query, "Google News RSS", start, end, weight=2)
+        articles.extend(fetched)
+        if note:
+            fetch_notes.append(note)
+
+    articles = _dedupe_articles(articles)
+    articles.sort(key=lambda item: (item.weight, item.published), reverse=True)
+
+    if not articles:
+        return (
+            f"## Public RSS global market news, from {start.date()} to {end.date()}\n\n"
+            "<no public RSS macro headlines were available from configured feeds.>\n"
+            + _format_notes(fetch_notes)
+        )
+
+    return (
+        f"## Public RSS global market news, from {start.date()} to {end.date()}\n\n"
+        + _format_articles(articles[:max_items])
+        + _format_notes(fetch_notes)
+    )
+
+
 def _ticker_aliases(ticker: str) -> tuple[str, ...]:
     normalized = ticker.strip().upper()
     aliases = {normalized}
@@ -191,6 +267,19 @@ def _fetch_rss(source: RSSSource, start: datetime, end: datetime) -> tuple[list[
         return [item for item in articles if _in_range(item.published, start, end)], ""
     except Exception as exc:
         return [], f"{source.name}: {exc}"
+
+
+def _fetch_google_news(query: str, source_name: str, start: datetime, end: datetime, weight: int) -> tuple[list[Article], str]:
+    url = "https://news.google.com/rss/search?" + urlencode(
+        {
+            "q": query,
+            "hl": os.getenv("TRADINGAGENTS_PUBLIC_NEWS_HL", "en-US"),
+            "gl": os.getenv("TRADINGAGENTS_PUBLIC_NEWS_GL", "US"),
+            "ceid": os.getenv("TRADINGAGENTS_PUBLIC_NEWS_CEID", "US:en"),
+        }
+    )
+    source = RSSSource(source_name, url, weight, "public")
+    return _fetch_rss(source, start, end)
 
 
 def _parse_feed(content: bytes, source: RSSSource) -> list[Article]:

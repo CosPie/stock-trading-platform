@@ -70,6 +70,7 @@ WORKDIR /app
 COPY --from=go-builder /out/server /app/server
 COPY --from=web-builder /out/web/ /app/web/
 COPY scripts/ /app/scripts/
+COPY extensions/ /app/extensions/
 COPY third_party/tradingagents/ /app/third_party/tradingagents/
 
 RUN useradd --create-home --uid 1000 appuser \
