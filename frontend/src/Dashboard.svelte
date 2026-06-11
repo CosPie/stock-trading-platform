@@ -373,6 +373,11 @@
     if (node) node.scrollTop = node.scrollHeight;
   }
 
+  function logEventKey(event, index, scope) {
+    const sourceKey = event?.id || event?.at || event?.stage || event?.type || "event";
+    return `${scope}-${index}-${sourceKey}`;
+  }
+
   function markStage(stage, done = true) {
     currentStage = stage;
     if (!done) return;
@@ -693,7 +698,7 @@
               {#if !logs.length}
                 <div class="p-4 text-sm text-base-content/60">实时日志会显示在这里。</div>
               {:else}
-                {#each logs as event, index (event.id || `${event.at}-${index}`)}
+                {#each logs as event, index (logEventKey(event, index, "log"))}
                   <div class="rounded-lg bg-base-100 p-3">
                     <div class="flex flex-wrap items-center gap-2 text-xs text-base-content/55"><time>{formatTime(event.at)}</time><strong>{event.stage || event.type || "日志"}</strong></div>
                     <pre class="mt-1 whitespace-pre-wrap break-words font-sans text-sm">{event.message || ""}{event.payload?.error ? `（${event.payload.error}）` : ""}</pre>
@@ -706,7 +711,7 @@
               {#if !errorLogs.length}
                 <div class="p-4 text-sm text-base-content/60">暂无错误详情。</div>
               {:else}
-                {#each errorLogs as event, index (event.id || `${event.at}-${index}`)}
+                {#each errorLogs as event, index (logEventKey(event, index, "error"))}
                   <div class="rounded-lg bg-base-100 p-3">
                     <div class="flex flex-wrap items-center gap-2 text-xs text-error"><time>{formatTime(event.at)}</time><strong>{event.stage || event.type || "错误"}</strong></div>
                     <pre class="mt-1 whitespace-pre-wrap break-words text-sm">{event.message || ""}{event.payload?.error ? `（${event.payload.error}）` : ""}</pre>
