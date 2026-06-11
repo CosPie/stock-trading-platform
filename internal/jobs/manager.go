@@ -3,7 +3,9 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +25,7 @@ type Manager struct {
 	mu          sync.Mutex
 	store       *storage.Store
 	runner      *trading.Runner
+	slots       chan struct{}
 	subscribers map[string]map[chan storage.Event]struct{}
 }
 
@@ -30,6 +33,7 @@ func NewManager(store *storage.Store, runner *trading.Runner) *Manager {
 	return &Manager{
 		store:       store,
 		runner:      runner,
+		slots:       make(chan struct{}, maxConcurrentAnalyses()),
 		subscribers: make(map[string]map[chan storage.Event]struct{}),
 	}
 }
@@ -126,6 +130,19 @@ func (m *Manager) Subscribe(jobID string) ([]storage.Event, <-chan storage.Event
 }
 
 func (m *Manager) run(ctx context.Context, report storage.Report, settings storage.Settings) {
+	select {
+	case m.slots <- struct{}{}:
+		defer func() { <-m.slots }()
+		m.emit(report.ID, newEvent(report.ID, "stage", "运行环境", "已获得分析执行资源，启动 TradingAgents", nil))
+	case <-ctx.Done():
+		_, _ = m.store.UpdateReport(report.ID, func(r *storage.Report) {
+			r.Status = "error"
+			r.Error = ctx.Err().Error()
+		})
+		m.emit(report.ID, newEvent(report.ID, "error", "失败", ctx.Err().Error(), nil))
+		return
+	}
+
 	start := time.Now()
 	req := trading.RunRequest{
 		JobID:       report.ID,
@@ -207,4 +224,16 @@ func depthRounds(depth string) (string, int) {
 func sanitizeID(value string) string {
 	replacer := strings.NewReplacer(".", "-", "_", "-", "^", "idx")
 	return strings.ToLower(replacer.Replace(value))
+}
+
+func maxConcurrentAnalyses() int {
+	value := strings.TrimSpace(os.Getenv("APP_MAX_CONCURRENT_ANALYSES"))
+	if value == "" {
+		return 2
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }

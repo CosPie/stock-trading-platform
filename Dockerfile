@@ -15,18 +15,28 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server 
 FROM python:3.12-slim AS py-builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends gcc g++ \
- && rm -rf /var/lib/apt/lists/*
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_COMPILE=1
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
 COPY third_party/tradingagents ./third_party/tradingagents
-RUN pip install --no-cache-dir ./third_party/tradingagents
+RUN python - <<'PY' > /tmp/tradingagents-constraints.txt
+import tomllib
+from pathlib import Path
+
+locked = {}
+for package in tomllib.loads(Path("third_party/tradingagents/uv.lock").read_text()).get("package", []):
+    name = package["name"]
+    if name != "tradingagents":
+        locked[name] = package["version"]
+
+for name in sorted(locked):
+    print(f"{name}=={locked[name]}")
+PY
+RUN pip install --no-cache-dir --prefer-binary -c /tmp/tradingagents-constraints.txt ./third_party/tradingagents
 
 FROM python:3.12-slim
 

@@ -6,6 +6,9 @@ const state = {
   completedStages: new Set(),
   activeReport: null,
   viewMode: "idle",
+  reports: [],
+  statusFilter: "all",
+  queue: [],
 };
 
 const els = {
@@ -17,14 +20,23 @@ const els = {
   historyCount: document.getElementById("historyCount"),
   activeTickerTitle: document.getElementById("activeTickerTitle"),
   tickerInput: document.getElementById("tickerInput"),
+  tickerInputHint: document.getElementById("tickerInputHint"),
+  tickerPreview: document.getElementById("tickerPreview"),
   startButton: document.getElementById("startButton"),
+  clearTickersButton: document.getElementById("clearTickersButton"),
   retryButton: document.getElementById("retryButton"),
   currentJobText: document.getElementById("currentJobText"),
   jobStatus: document.getElementById("jobStatus"),
+  queueList: document.getElementById("queueList"),
+  queueSubhead: document.getElementById("queueSubhead"),
   logList: document.getElementById("logList"),
   errorList: document.getElementById("errorList"),
   errorCount: document.getElementById("errorCount"),
+  reportMetrics: document.getElementById("reportMetrics"),
+  comparisonTable: document.getElementById("comparisonTable"),
+  comparisonSubhead: document.getElementById("comparisonSubhead"),
   reportActions: document.getElementById("reportActions"),
+  selectedReportPreview: document.getElementById("selectedReportPreview"),
   openReportPageButton: document.getElementById("openReportPageButton"),
   generateBriefButton: document.getElementById("generateBriefButton"),
   briefStatus: document.getElementById("briefStatus"),
@@ -65,7 +77,9 @@ function init() {
   bindEvents();
   loadSettings();
   loadReports();
+  updateTickerPreview();
   setAnalysisView("idle");
+  setInterval(refreshRunningReports, 8000);
 }
 
 function bindEvents() {
@@ -81,10 +95,19 @@ function bindEvents() {
     button.addEventListener("click", () => setLogTab(button.dataset.logTab));
   });
 
-  els.newAnalysisButton.addEventListener("click", startNewAnalysis);
+  document.querySelectorAll("[data-status-filter]").forEach((button) => {
+    button.addEventListener("click", () => setStatusFilter(button.dataset.statusFilter));
+  });
 
+  document.querySelectorAll("[data-example-tickers]").forEach((button) => {
+    button.addEventListener("click", () => useTickerExample(button.dataset.exampleTickers));
+  });
+
+  els.newAnalysisButton.addEventListener("click", startNewAnalysis);
   els.historySearch.addEventListener("input", debounce(loadReports, 220));
   els.tickerInput.addEventListener("input", markManualAnalysis);
+  els.tickerInput.addEventListener("keydown", handleTickerKeydown);
+  els.clearTickersButton.addEventListener("click", clearTickerInput);
   els.startButton.addEventListener("click", startAnalysis);
   els.retryButton.addEventListener("click", startAnalysis);
   els.openReportPageButton.addEventListener("click", openSelectedReportPage);
@@ -99,10 +122,15 @@ function bindEvents() {
 }
 
 async function loadSettings() {
-  const settings = await api("/api/settings");
-  state.settings = settings;
-  fillSettings(settings);
-  updateModelChip();
+  try {
+    const settings = await api("/api/settings");
+    state.settings = settings;
+    fillSettings(settings);
+    updateModelChip();
+  } catch (error) {
+    els.modelChip.textContent = "设置加载失败";
+    console.error(error);
+  }
 }
 
 function fillSettings(settings) {
@@ -110,7 +138,8 @@ function fillSettings(settings) {
   fields.quickModel.value = settings.llm.quickModel || "deepseek-v4-flash";
   fields.deepModel.value = settings.llm.deepModel || "deepseek-v4-pro";
   fields.temperature.value = settings.llm.temperature || "";
-  fields.apiKey.value = settings.llm.apiKey || "";
+  fields.apiKey.value = "";
+  fields.apiKey.placeholder = settings.llm.apiKey ? "已保存，留空则保持当前 Key" : "sk-...";
   fields.pythonPath.value = settings.runtime.pythonPath || "python3";
   fields.tradingAgentsDir.value = settings.runtime.tradingAgentsDir || "";
   fields.resultsDir.value = settings.runtime.resultsDir || "";
@@ -124,7 +153,7 @@ async function saveSettings(event) {
   const settings = {
     llm: {
       provider: "deepseek",
-      apiKey: fields.apiKey.value.trim(),
+      apiKey: fields.apiKey.value.trim() || state.settings?.llm?.apiKey || "",
       quickModel: fields.quickModel.value,
       deepModel: fields.deepModel.value,
       backendUrl: state.settings?.llm?.backendUrl || "https://api.deepseek.com",
@@ -151,20 +180,49 @@ async function saveSettings(event) {
 }
 
 async function loadReports() {
-  const q = encodeURIComponent(els.historySearch.value.trim());
-  const reports = await api(`/api/reports?q=${q}`);
-  els.historyCount.textContent = reports.length;
+  try {
+    const q = encodeURIComponent(els.historySearch.value.trim());
+    const reports = await api(`/api/reports?q=${q}`);
+    state.reports = reports;
+    renderHistory();
+    renderOverview();
+    renderComparison();
+    renderQueue();
+  } catch (error) {
+    els.historyList.innerHTML = `<div class="empty-state error-state"><strong>历史报告加载失败</strong><p>${escapeHTML(error.message)}</p></div>`;
+    els.comparisonTable.innerHTML = `<div class="empty-state error-state"><strong>报告对比暂不可用</strong><p>${escapeHTML(error.message)}</p></div>`;
+    els.queueList.innerHTML = '<div class="empty-state">暂无运行中的分析队列。</div>';
+    els.reportMetrics.innerHTML = "";
+  }
+}
+
+function refreshRunningReports() {
+  const hasRunning = state.reports.some((report) => report.status === "running") || state.queue.some((item) => item.status === "queued" || item.status === "running");
+  if (hasRunning) {
+    loadReports();
+  }
+}
+
+function renderHistory() {
+  const reports = filteredReports();
+  els.historyCount.textContent = state.reports.length;
   if (!reports.length) {
-    els.historyList.innerHTML = '<div class="empty-state">暂无历史报告。</div>';
+    els.historyList.innerHTML = '<div class="empty-state compact">没有匹配的历史报告。</div>';
     return;
   }
   els.historyList.innerHTML = reports
-    .map(
-      (report) => `
-        <div class="history-row ${report.id === state.activeReportId ? "is-active" : ""}">
+    .map((report) => {
+      const selected = report.id === state.activeReportId ? "is-active" : "";
+      const status = report.status || "pending";
+      return `
+        <div class="history-row ${selected}">
           <button class="history-item" data-id="${escapeAttr(report.id)}" type="button">
-            <strong>${escapeHTML(report.ticker)}</strong>
-            <span>${escapeHTML(report.analysisDate)} · ${escapeHTML(report.depth)} · ${statusText(report.status)}</span>
+            <span class="history-head">
+              <strong>${escapeHTML(report.ticker)}</strong>
+              <span class="mini-status is-${escapeAttr(status)}">${statusText(status)}</span>
+            </span>
+            <span>${escapeHTML(report.analysisDate)} · ${escapeHTML(report.depth)} · ${durationText(report.durationSeconds)}</span>
+            <span>${escapeHTML(decisionText(report.decision))}</span>
             ${report.status === "error" ? '<em>可重新分析</em>' : ""}
           </button>
           ${
@@ -173,8 +231,8 @@ async function loadReports() {
               : `<button class="history-delete" type="button" aria-label="删除 ${escapeAttr(report.ticker)} 报告" data-id="${escapeAttr(report.id)}" data-ticker="${escapeAttr(report.ticker)}" title="删除">×</button>`
           }
         </div>
-      `,
-    )
+      `;
+    })
     .join("");
   els.historyList.querySelectorAll(".history-item").forEach((button) => {
     button.addEventListener("click", () => openReport(button.dataset.id));
@@ -185,6 +243,19 @@ async function loadReports() {
       deleteReport(button.dataset.id, button.dataset.ticker);
     });
   });
+}
+
+function filteredReports() {
+  if (state.statusFilter === "all") return state.reports;
+  return state.reports.filter((report) => report.status === state.statusFilter);
+}
+
+function setStatusFilter(filter) {
+  state.statusFilter = filter || "all";
+  document.querySelectorAll("[data-status-filter]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.statusFilter === state.statusFilter);
+  });
+  renderHistory();
 }
 
 async function deleteReport(id, ticker) {
@@ -206,11 +277,9 @@ async function deleteReport(id, ticker) {
 function clearActiveReport() {
   state.activeReportId = null;
   state.activeReport = null;
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
-  }
+  closeEventSource();
   els.tickerInput.value = "";
+  updateTickerPreview();
   updateActiveTickerTitle("");
   els.currentJobText.textContent = "尚未开始分析";
   els.jobStatus.textContent = "待开始";
@@ -225,7 +294,7 @@ function clearActiveReport() {
 
 function updateActiveTickerTitle(ticker) {
   const value = String(ticker || "").trim().toUpperCase();
-  els.activeTickerTitle.textContent = value;
+  els.activeTickerTitle.textContent = value ? `${value} 分析` : "";
   els.activeTickerTitle.hidden = !value;
 }
 
@@ -235,13 +304,11 @@ function updateRetryButton() {
 }
 
 function startNewAnalysis() {
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
-  }
   state.activeReportId = null;
   state.activeReport = null;
+  closeEventSource();
   els.tickerInput.value = "";
+  updateTickerPreview();
   setDepth("shallow", { keepRetry: true });
   els.currentJobText.textContent = "尚未开始分析";
   els.jobStatus.textContent = "待开始";
@@ -250,7 +317,6 @@ function startNewAnalysis() {
   renderLogs([]);
   syncStagesFromLogs([]);
   updateStartButton();
-  els.startButton.disabled = false;
   updateActiveTickerTitle("");
   updateRetryButton();
   setAnalysisView("idle");
@@ -279,10 +345,19 @@ function setAnalysisView(mode) {
 }
 
 async function openReport(id) {
-  const report = await api(`/api/reports/${encodeURIComponent(id)}`);
+  let report;
+  try {
+    report = await api(`/api/reports/${encodeURIComponent(id)}`);
+  } catch (error) {
+    els.reportSubhead.textContent = "报告加载失败";
+    updateReportActions(null, error.message);
+    window.alert(error.message);
+    return;
+  }
   state.activeReportId = id;
   state.activeReport = report;
   els.tickerInput.value = report.ticker;
+  updateTickerPreview();
   updateActiveTickerTitle(report.ticker);
   setDepth(depthKey(report.depth), { keepRetry: true });
   updateStartButton();
@@ -291,50 +366,90 @@ async function openReport(id) {
   updateReportActions(report);
   renderLogs(report.logs || []);
   syncStagesFromLogs(report.logs || []);
-  els.currentJobText.textContent = `${report.ticker} 历史报告`;
+  els.currentJobText.textContent = `${report.ticker} ${report.status === "running" ? "正在分析" : "历史报告"}`;
   els.jobStatus.textContent = statusText(report.status);
   setAnalysisView("active");
+  if (report.status === "running") {
+    connectEvents(report.id);
+  } else {
+    closeEventSource();
+  }
   loadReports();
 }
 
 async function startAnalysis() {
-  const ticker = els.tickerInput.value.trim().toUpperCase();
-  if (!ticker) {
+  const retrying = state.activeReport && state.activeReport.status === "error";
+  const tickers = retrying ? [state.activeReport.ticker] : parseTickers();
+  if (!tickers.length) {
     els.tickerInput.focus();
     return;
   }
-  updateActiveTickerTitle(ticker);
+
   setAnalysisView("active");
   els.startButton.disabled = true;
   els.retryButton.hidden = true;
-  resetRunUI();
-  try {
-    const retrying = state.activeReport && state.activeReport.status === "error";
-    const report = await api("/api/analyses", {
-      method: "POST",
-      body: JSON.stringify({
-        ticker,
-        depth: state.depth,
-        reportId: retrying ? state.activeReport.id : "",
-      }),
-    });
-    state.activeReportId = report.id;
-    state.activeReport = report;
-    els.currentJobText.textContent = `${report.ticker} 正在分析`;
-    els.jobStatus.textContent = "分析中";
-    connectEvents(report.id);
-    loadReports();
-  } catch (error) {
-    addLog({ stage: "启动失败", message: error.message, at: new Date().toISOString(), type: "error" });
-    els.jobStatus.textContent = "失败";
-    els.startButton.disabled = false;
-    updateStartButton();
-    updateRetryButton();
+  resetRunUI(tickers);
+
+  const started = [];
+  const failed = [];
+  for (const ticker of tickers) {
+    try {
+      const report = await api("/api/analyses", {
+        method: "POST",
+        body: JSON.stringify({
+          ticker,
+          depth: state.depth,
+          reportId: retrying ? state.activeReport.id : "",
+        }),
+      });
+      started.push(report);
+      upsertQueue(report);
+    } catch (error) {
+      failed.push({ ticker, error: error.message });
+      upsertQueue({ ticker, status: "error", error: error.message });
+    }
   }
+
+  if (started.length) {
+    const first = started[0];
+    state.activeReportId = first.id;
+    state.activeReport = first;
+    updateActiveTickerTitle(started.length > 1 ? `${started.length} 个股票` : first.ticker);
+    els.currentJobText.textContent =
+      started.length > 1 ? `已启动 ${started.length} 个分析任务，正在跟踪 ${first.ticker}` : `${first.ticker} 正在分析`;
+    els.jobStatus.textContent = failed.length ? "部分启动" : "分析中";
+    connectEvents(first.id);
+  } else {
+    els.jobStatus.textContent = "启动失败";
+    failed.forEach((item) => addLog({ stage: item.ticker, message: item.error, at: new Date().toISOString(), type: "error" }));
+  }
+
+  if (failed.length) {
+    setLogTab("errors");
+  }
+  els.startButton.disabled = false;
+  updateStartButton();
+  renderQueue();
+  loadReports();
+}
+
+function resetRunUI(tickers = []) {
+  state.completedStages = new Set();
+  state.queue = tickers.map((ticker) => ({ ticker, status: "queued" }));
+  document.querySelectorAll(".stage-line li").forEach((item) => {
+    item.classList.remove("is-current", "is-done");
+  });
+  els.logList.innerHTML = "";
+  els.errorList.innerHTML = "";
+  els.errorCount.textContent = "0";
+  setLogTab("logs");
+  updateReportActions(null, "分析完成后可以打开报告页查看。");
+  els.reportSubhead.textContent = tickers.length > 1 ? "正在批量启动分析任务。" : "正在等待分析结果。";
+  renderQueue();
 }
 
 function connectEvents(id) {
-  if (state.eventSource) state.eventSource.close();
+  closeEventSource();
   state.eventSource = new EventSource(`/api/analyses/${encodeURIComponent(id)}/events`);
   ["queued", "start", "stage", "log", "complete", "error"].forEach((name) => {
     state.eventSource.addEventListener(name, (event) => handleEvent(JSON.parse(event.data)));
@@ -351,7 +466,7 @@ async function handleEvent(event) {
     els.jobStatus.textContent = "已完成";
     els.startButton.disabled = false;
     updateStartButton();
-    if (state.eventSource) state.eventSource.close();
+    closeEventSource();
     await openReport(event.jobId || state.activeReportId);
   }
   if (event.type === "error") {
@@ -360,22 +475,9 @@ async function handleEvent(event) {
     if (state.activeReport) state.activeReport.status = "error";
     updateStartButton();
     updateRetryButton();
-    if (state.eventSource) state.eventSource.close();
+    closeEventSource();
     loadReports();
   }
-}
-
-function resetRunUI() {
-  state.completedStages = new Set();
-  document.querySelectorAll(".stage-line li").forEach((item) => {
-    item.classList.remove("is-current", "is-done");
-  });
-  els.logList.innerHTML = "";
-  els.errorList.innerHTML = "";
-  els.errorCount.textContent = "0";
-  setLogTab("logs");
-  updateReportActions(null, "分析完成后可以打开报告页查看。");
-  els.reportSubhead.textContent = "正在等待分析结果。";
 }
 
 function renderLogs(logs) {
@@ -416,10 +518,15 @@ function addLog(event, options = {}) {
     `;
   } else {
     row.className = "log-row";
+    if (message.length > 220 || message.includes("\n")) {
+      row.classList.add("is-long");
+    }
     row.innerHTML = `
-      <time>${formatTime(event.at)}</time>
-      <strong>${escapeHTML(event.stage || event.type || "日志")}</strong>
-      <span>${escapeHTML(message)}</span>
+      <div class="log-row-meta">
+        <time>${formatTime(event.at)}</time>
+        <strong>${escapeHTML(event.stage || event.type || "日志")}</strong>
+      </div>
+      <pre class="log-message">${escapeHTML(message)}</pre>
     `;
   }
   list.appendChild(row);
@@ -448,7 +555,7 @@ function setLogTab(tab) {
     button.setAttribute("aria-selected", String(active));
   });
   document.querySelectorAll("[data-log-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.logPanel !== tab;
+    panel.hidden = panel.datasetLogPanel !== tab && panel.dataset.logPanel !== tab;
   });
 }
 
@@ -485,6 +592,7 @@ function setDepth(depth, options = {}) {
 }
 
 function markManualAnalysis() {
+  updateTickerPreview();
   if (state.activeReport) {
     state.activeReport = null;
     state.activeReportId = null;
@@ -494,14 +602,192 @@ function markManualAnalysis() {
 
 function updateStartButton() {
   const retrying = state.activeReport && state.activeReport.status === "error";
-  els.startButton.textContent = retrying ? "重新分析" : "开始分析";
+  const count = parseTickers().length;
+  if (retrying) {
+    els.startButton.textContent = "重新分析";
+    els.startButton.disabled = false;
+    els.tickerInputHint.textContent = "上次分析失败，可以直接重新分析。";
+    return;
+  }
+  els.startButton.textContent = count > 1 ? `开始分析 ${count} 个` : "开始分析";
+  els.startButton.disabled = count === 0;
+  els.tickerInputHint.textContent = count
+    ? `已识别 ${count} 个股票。按 Enter 开始，Shift+Enter 换行。`
+    : "按 Enter 开始分析，Shift+Enter 换行。";
 }
 
-function depthKey(depth) {
-  const value = String(depth || "").toLowerCase();
-  if (value === "中度" || value === "medium") return "medium";
-  if (value === "深度" || value === "deep" || value === "depth") return "deep";
-  return "shallow";
+function clearTickerInput() {
+  els.tickerInput.value = "";
+  markManualAnalysis();
+  els.tickerInput.focus();
+}
+
+function useTickerExample(value) {
+  els.tickerInput.value = value || "";
+  markManualAnalysis();
+  els.tickerInput.focus();
+}
+
+function handleTickerKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  if (els.startButton.disabled) {
+    els.tickerInputHint.textContent = "先输入一个股票代码，例如 AAPL 或 MU。";
+    els.tickerInput.focus();
+    return;
+  }
+  startAnalysis();
+}
+
+function parseTickers() {
+  const seen = new Set();
+  const raw = els.tickerInput.value.toUpperCase().split(/[\s,，;；、]+/);
+  return raw
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+function updateTickerPreview() {
+  const tickers = parseTickers();
+  if (!tickers.length) {
+    els.tickerPreview.innerHTML = "<span>待分析 0 个</span>";
+    return;
+  }
+  els.tickerPreview.innerHTML = `
+    <span>待分析 ${tickers.length} 个</span>
+    ${tickers.map((ticker) => `<button class="ticker-token" type="button" data-ticker="${escapeAttr(ticker)}">${escapeHTML(ticker)}</button>`).join("")}
+  `;
+  els.tickerPreview.querySelectorAll(".ticker-token").forEach((button) => {
+    button.addEventListener("click", () => removeTicker(button.dataset.ticker));
+  });
+}
+
+function removeTicker(ticker) {
+  const next = parseTickers().filter((item) => item !== ticker);
+  els.tickerInput.value = next.join(", ");
+  markManualAnalysis();
+}
+
+function upsertQueue(report) {
+  const key = report.id || report.ticker;
+  const found = state.queue.findIndex((item) => (item.id || item.ticker) === key || item.ticker === report.ticker);
+  const next = { ...state.queue[found], ...report };
+  if (found >= 0) {
+    state.queue[found] = next;
+  } else {
+    state.queue.push(next);
+  }
+  renderQueue();
+}
+
+function renderQueue() {
+  const queueReports = mergeQueueWithReports();
+  if (!queueReports.length) {
+    els.queueSubhead.textContent = "批量启动后会显示每个股票的任务状态。";
+    els.queueList.innerHTML = '<div class="empty-state">暂无运行中的分析队列。</div>';
+    return;
+  }
+  const running = queueReports.filter((item) => item.status === "running" || item.status === "queued").length;
+  els.queueSubhead.textContent = `${queueReports.length} 个任务，${running} 个仍在推进。`;
+  els.queueList.innerHTML = queueReports
+    .map(
+      (item) => `
+        <button class="queue-item ${item.id === state.activeReportId ? "is-active" : ""}" type="button" data-id="${escapeAttr(item.id || "")}" ${item.id ? "" : "disabled"}>
+          <span>
+            <strong>${escapeHTML(item.ticker)}</strong>
+            <small>${escapeHTML(item.analysisDate || "今日")} · ${escapeHTML(item.depth || depthText(state.depth))}</small>
+          </span>
+          <span class="mini-status is-${escapeAttr(item.status || "queued")}">${statusText(item.status || "queued")}</span>
+        </button>
+      `,
+    )
+    .join("");
+  els.queueList.querySelectorAll(".queue-item[data-id]").forEach((button) => {
+    if (button.dataset.id) button.addEventListener("click", () => openReport(button.dataset.id));
+  });
+}
+
+function mergeQueueWithReports() {
+  const queueTickers = new Set(state.queue.map((item) => item.ticker));
+  const relatedReports = state.reports.filter((report) => queueTickers.has(report.ticker) || report.status === "running");
+  const byTicker = new Map();
+  [...state.queue, ...relatedReports].forEach((item) => {
+    byTicker.set(item.ticker, { ...byTicker.get(item.ticker), ...item });
+  });
+  return Array.from(byTicker.values());
+}
+
+function renderOverview() {
+  const total = state.reports.length;
+  const complete = state.reports.filter((report) => report.status === "complete").length;
+  const running = state.reports.filter((report) => report.status === "running").length;
+  const error = state.reports.filter((report) => report.status === "error").length;
+  const latest = state.reports[0];
+  const values = [
+    ["全部报告", total, latest ? `${latest.ticker} 最近更新` : "尚未生成报告"],
+    ["已完成", complete, total ? `${Math.round((complete / total) * 100)}% 完成率` : "等待首次分析"],
+    ["分析中", running, running ? "可从左侧切换跟踪" : "当前无运行任务"],
+    ["需处理", error, error ? "失败任务可重新分析" : "暂无失败任务"],
+  ];
+  els.reportMetrics.innerHTML = values
+    .map(
+      ([label, value, hint]) => `
+        <div class="metric-item">
+          <span>${label}</span>
+          <strong>${value}</strong>
+          <small>${escapeHTML(hint)}</small>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderComparison() {
+  const reports = state.reports.filter((report) => report.status === "complete").slice(0, 8);
+  if (!reports.length) {
+    els.comparisonSubhead.textContent = "完成分析后可在这里横向查看结论、耗时和简报状态。";
+    els.comparisonTable.innerHTML = '<div class="empty-state">还没有可对比的完成报告。</div>';
+    return;
+  }
+  els.comparisonSubhead.textContent = `展示最近 ${reports.length} 份完成报告。`;
+  els.comparisonTable.innerHTML = `
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>股票</th>
+          <th>日期</th>
+          <th>深度</th>
+          <th>决策</th>
+          <th>耗时</th>
+          <th>简报</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${reports
+          .map(
+            (report) => `
+              <tr>
+                <td><button class="table-link" type="button" data-id="${escapeAttr(report.id)}">${escapeHTML(report.ticker)}</button></td>
+                <td>${escapeHTML(report.analysisDate)}</td>
+                <td>${escapeHTML(report.depth)}</td>
+                <td>${escapeHTML(decisionText(report.decision))}</td>
+                <td>${durationText(report.durationSeconds)}</td>
+                <td>${report.briefHtml ? "已生成" : "未生成"}</td>
+              </tr>
+            `,
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+  els.comparisonTable.querySelectorAll(".table-link").forEach((button) => {
+    button.addEventListener("click", () => openReport(button.dataset.id));
+  });
 }
 
 function updateReportActions(report, hint = "") {
@@ -512,6 +798,7 @@ function updateReportActions(report, hint = "") {
   els.reportActions.querySelector("p").textContent = selected
     ? `${report.ticker} 的报告已选择。${report.status === "complete" ? "可以打开新页面阅读。" : "当前报告未完成或失败。"}`
     : "暂无已选择报告。";
+  els.selectedReportPreview.innerHTML = selected ? renderSelectedReportPreview(report) : "";
   if (!selected) {
     els.briefStatus.textContent = hint;
     return;
@@ -527,6 +814,18 @@ function updateReportActions(report, hint = "") {
     els.briefStatus.textContent = report.error || "报告完成后可以生成简报。";
     els.generateBriefButton.textContent = "生成分析简报";
   }
+}
+
+function renderSelectedReportPreview(report) {
+  return `
+    <dl>
+      <div><dt>状态</dt><dd>${statusText(report.status)}</dd></div>
+      <div><dt>决策</dt><dd>${escapeHTML(decisionText(report.decision))}</dd></div>
+      <div><dt>耗时</dt><dd>${durationText(report.durationSeconds)}</dd></div>
+      <div><dt>日志</dt><dd>${(report.logs || []).length} 条</dd></div>
+    </dl>
+    <p>${escapeHTML(report.summary || report.error || "暂无摘要，打开报告页查看完整输出。")}</p>
+  `;
 }
 
 function openSelectedReportPage() {
@@ -582,6 +881,37 @@ function updateModelChip() {
   els.modelChip.textContent = `DeepSeek · ${deep}`;
 }
 
+function depthKey(depth) {
+  const value = String(depth || "").toLowerCase();
+  if (value === "中度" || value === "medium") return "medium";
+  if (value === "深度" || value === "deep" || value === "depth") return "deep";
+  return "shallow";
+}
+
+function depthText(depth) {
+  return { shallow: "浅度", medium: "中度", deep: "深度" }[depth] || "浅度";
+}
+
+function decisionText(decision) {
+  const value = String(decision || "").trim();
+  return value || "未提取";
+}
+
+function durationText(seconds) {
+  const value = Number(seconds || 0);
+  if (!value) return "未记录";
+  if (value < 60) return `${value} 秒`;
+  const mins = Math.floor(value / 60);
+  const rest = value % 60;
+  return rest ? `${mins} 分 ${rest} 秒` : `${mins} 分`;
+}
+
+function closeEventSource() {
+  if (!state.eventSource) return;
+  state.eventSource.close();
+  state.eventSource = null;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -600,139 +930,6 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-function renderMarkdown(text) {
-  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
-  const html = [];
-  let paragraph = [];
-  let list = null;
-  let quote = [];
-  let code = [];
-  let inCode = false;
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
-    paragraph = [];
-  };
-  const flushList = () => {
-    if (!list) return;
-    html.push(`<${list.type}>${list.items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${list.type}>`);
-    list = null;
-  };
-  const flushQuote = () => {
-    if (!quote.length) return;
-    html.push(`<blockquote>${quote.map((item) => `<p>${inlineMarkdown(item)}</p>`).join("")}</blockquote>`);
-    quote = [];
-  };
-  const flushCode = () => {
-    if (!code.length) return;
-    html.push(`<pre><code>${escapeHTML(code.join("\n"))}</code></pre>`);
-    code = [];
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const raw = lines[i];
-    const line = raw.trimEnd();
-    if (line.trim().startsWith("```")) {
-      if (inCode) {
-        inCode = false;
-        flushCode();
-      } else {
-        flushParagraph();
-        flushList();
-        flushQuote();
-        inCode = true;
-      }
-      continue;
-    }
-    if (inCode) {
-      code.push(raw);
-      continue;
-    }
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      flushQuote();
-      continue;
-    }
-    if (isMarkdownTable(lines, i)) {
-      flushParagraph();
-      flushList();
-      flushQuote();
-      const tableRows = [];
-      while (i < lines.length && lines[i].includes("|")) {
-        tableRows.push(lines[i]);
-        i += 1;
-      }
-      i -= 1;
-      html.push(renderTable(tableRows));
-      continue;
-    }
-    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      flushQuote();
-      const level = Math.min(heading[1].length, 3);
-      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
-      continue;
-    }
-    const quoteMatch = /^>\s?(.*)$/.exec(line);
-    if (quoteMatch) {
-      flushParagraph();
-      flushList();
-      quote.push(quoteMatch[1]);
-      continue;
-    }
-    const bullet = /^[-*]\s+(.+)$/.exec(line);
-    const ordered = /^\d+\.\s+(.+)$/.exec(line);
-    if (bullet || ordered) {
-      flushParagraph();
-      flushQuote();
-      const type = bullet ? "ul" : "ol";
-      if (!list || list.type !== type) {
-        flushList();
-        list = { type, items: [] };
-      }
-      list.items.push((bullet || ordered)[1]);
-      continue;
-    }
-    flushList();
-    flushQuote();
-    paragraph.push(line.trim());
-  }
-
-  flushParagraph();
-  flushList();
-  flushQuote();
-  flushCode();
-  return html.join("");
-}
-
-function isMarkdownTable(lines, index) {
-  const current = lines[index] || "";
-  const next = lines[index + 1] || "";
-  return current.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(next);
-}
-
-function renderTable(rows) {
-  const parsed = rows
-    .filter((row, index) => index !== 1)
-    .map((row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()));
-  if (!parsed.length) return "";
-  const [head, ...body] = parsed;
-  return `<div class="markdown-table-wrap"><table><thead><tr>${head.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${body
-    .map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join("")}</tr>`)
-    .join("")}</tbody></table></div>`;
-}
-
-function inlineMarkdown(value) {
-  return escapeHTML(value)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-}
-
 function formatTime(value) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return "";
@@ -740,7 +937,7 @@ function formatTime(value) {
 }
 
 function statusText(status) {
-  return { running: "分析中", complete: "已完成", error: "失败" }[status] || "待开始";
+  return { queued: "待启动", running: "分析中", complete: "已完成", error: "失败" }[status] || "待开始";
 }
 
 function escapeHTML(value) {

@@ -2,6 +2,7 @@ data/app_state.json
 data/runtime/
 data/reports/
 .venv/
+node_modules/
 __pycache__/
 *.pyc
 *.tmp

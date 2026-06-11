@@ -5,8 +5,12 @@ import os
 import sys
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 os.environ.setdefault("YF_DISABLE_CURL_CFFI", "1")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 try:
     import requests as _plain_requests
@@ -160,6 +164,17 @@ def main():
             config["temperature"] = float(args.temperature)
 
         asset_type = detect_asset_type(args.ticker)
+        try:
+            from extensions.tradingagents_china_news import install_china_news_extension
+
+            config = install_china_news_extension(config, args.ticker)
+        except Exception as exc:
+            emit(
+                "log",
+                "国内新闻源",
+                f"国内新闻源扩展未启用，继续使用 TradingAgents 默认新闻源：{exc}",
+            )
+
         analysts = selected_analysts(asset_type)
         emit(
             "start",
