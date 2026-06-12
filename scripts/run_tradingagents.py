@@ -175,6 +175,21 @@ def main():
                 f"国内新闻源扩展未启用，继续使用 TradingAgents 默认新闻源：{exc}",
             )
 
+        try:
+            from extensions.tradingagents_rapidapi_yahoo import install_rapidapi_yahoo_extension
+
+            before = json.dumps(config.get("data_vendors", {}), sort_keys=True)
+            config = install_rapidapi_yahoo_extension(config, args.ticker)
+            after = json.dumps(config.get("data_vendors", {}), sort_keys=True)
+            if before != after:
+                emit("log", "备用数据源", "RapidAPI Yahoo Finance 备用行情/新闻源已启用")
+        except Exception as exc:
+            emit(
+                "log",
+                "备用数据源",
+                f"RapidAPI Yahoo Finance 备用源未启用，继续使用现有数据源：{exc}",
+            )
+
         analysts = selected_analysts(asset_type)
         emit(
             "start",
