@@ -477,21 +477,21 @@
 </svelte:head>
 
 <div class="min-h-screen bg-base-200 text-base-content lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
-  <aside class="sticky top-0 z-20 flex h-auto max-h-screen flex-col border-b border-base-300 bg-base-100/95 p-4 backdrop-blur lg:h-screen lg:border-b-0 lg:border-r">
+  <aside class="relative z-20 flex flex-col border-b border-base-300 bg-base-100/95 p-3 backdrop-blur sm:p-4 lg:sticky lg:top-0 lg:h-screen lg:max-h-screen lg:border-b-0 lg:border-r">
     <div class="flex items-center gap-3">
-      <div class="grid h-11 w-11 place-items-center rounded-lg bg-primary text-sm font-black text-primary-content">TA</div>
+      <div class="grid h-10 w-10 place-items-center rounded-lg bg-primary text-sm font-black text-primary-content sm:h-11 sm:w-11">TA</div>
       <div>
         <h1 class="text-xl font-bold leading-tight">分析工作台</h1>
         <p class="text-sm text-base-content/60">TradingAgents</p>
       </div>
     </div>
 
-    <button class="btn btn-primary mt-4 min-h-11 rounded-lg" type="button" on:click={startNewAnalysis}>
+    <button class="btn btn-primary mt-3 min-h-11 rounded-lg sm:mt-4" type="button" on:click={startNewAnalysis}>
       <Plus size={18} />
       新建分析
     </button>
 
-    <section class="mt-5 flex min-h-0 flex-1 flex-col">
+    <section class="mt-4 flex flex-col lg:mt-5 lg:min-h-0 lg:flex-1">
       <div class="mb-3 flex items-center justify-between">
         <h2 class="flex items-center gap-2 text-base font-bold"><History size={18} /> 历史报告</h2>
         <span class="badge badge-ghost">{reports.length}</span>
@@ -502,15 +502,15 @@
         <input bind:value={historySearch} on:input={scheduleHistorySearch} type="search" class="grow" placeholder="股票或日期" />
       </label>
 
-      <div class="mt-3 flex flex-wrap gap-2" aria-label="历史报告筛选">
+      <div class="mt-3 flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0" aria-label="历史报告筛选">
         {#each statusFilters as [key, label]}
-          <button class="btn btn-sm rounded-full {statusFilter === key ? 'btn-primary' : 'btn-ghost'}" type="button" on:click={() => (statusFilter = key)}>
+          <button class="btn btn-sm shrink-0 rounded-full {statusFilter === key ? 'btn-primary' : 'btn-ghost'}" type="button" on:click={() => (statusFilter = key)}>
             {label}
           </button>
         {/each}
       </div>
 
-      <div class="mt-3 grid min-h-0 flex-1 content-start gap-2 overflow-auto pr-1">
+      <div class="mt-3 grid max-h-72 min-h-0 content-start gap-2 overflow-auto pr-1 overscroll-contain sm:max-h-80 lg:max-h-none lg:flex-1">
         {#if loadingReports && !reports.length}
           <div class="skeleton h-20 rounded-lg"></div>
           <div class="skeleton h-20 rounded-lg"></div>
@@ -540,13 +540,13 @@
       </div>
     </section>
 
-    <button class="btn btn-outline mt-4 rounded-lg" type="button" on:click={() => (settingsOpen = true)}>
+    <button class="btn btn-outline mt-3 rounded-lg sm:mt-4" type="button" on:click={() => (settingsOpen = true)}>
       <Settings size={17} />
       设置
     </button>
   </aside>
 
-  <main class="min-w-0 p-4 lg:p-8">
+  <main class="min-w-0 p-3 sm:p-4 lg:p-8">
     <header class="flex flex-col gap-4 border-b border-base-300 pb-5 xl:flex-row xl:items-start xl:justify-between">
       <div class="max-w-4xl">
         {#if activeTickerTitle}
