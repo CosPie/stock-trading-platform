@@ -68,6 +68,7 @@
   let settingsMessage = "";
   let briefStatus = "";
   let loadingReports = false;
+  let isStartingAnalysis = false;
   let launchError = "";
   let reportSubhead = "选择左侧历史报告，或完成一次新分析后查看。";
   let currentJobText = "尚未开始分析";
@@ -99,14 +100,17 @@
   $: queueReports = mergeQueueWithReports();
   $: modelChip = settings?.llm?.deepModel ? `DeepSeek · ${settings.llm.deepModel}` : "DeepSeek · deepseek-v4-pro";
   $: retrying = activeReport && activeReport.status === "error";
-  $: canStart = retrying || tickers.length > 0;
+  $: activeReportRunning = activeReport && activeReport.status === "running";
+  $: canStart = !isStartingAnalysis && !activeReportRunning && (retrying || tickers.length > 0);
   $: hasSelectedReport = Boolean(activeReport);
   $: showAnalysisEntry = !activeReport || activeReport.status !== "complete";
   $: showOverview = !activeReport || activeReport.status !== "complete";
   $: showQueue = !activeReport || activeReport.status !== "complete";
   $: activeTickerTitle = activeReport ? `${activeReport.ticker} 分析` : viewMode === "active" && queue.length > 1 ? `${queue.length} 个股票分析` : "";
-  $: startButtonText = retrying ? "重新分析" : tickers.length > 1 ? `开始分析 ${tickers.length} 个` : "开始分析";
-  $: inputHint = retrying
+  $: startButtonText = isStartingAnalysis ? "启动中..." : activeReportRunning ? "分析中" : retrying ? "重新分析" : tickers.length > 1 ? `开始分析 ${tickers.length} 个` : "开始分析";
+  $: inputHint = activeReportRunning
+    ? "当前分析仍在进行，完成或失败后可再次启动。"
+    : retrying
     ? "上次分析失败，可以直接重新分析。"
     : tickers.length
       ? `已识别 ${tickers.length} 个股票。按 Enter 开始，Shift+Enter 换行。`
@@ -273,45 +277,51 @@
   }
 
   async function startAnalysis() {
+    if (isStartingAnalysis || activeReportRunning) return;
     const launchTickers = retrying ? [activeReport.ticker] : tickers;
     if (!launchTickers.length) return;
+    isStartingAnalysis = true;
     viewMode = "active";
     resetRunUI(launchTickers);
 
     const started = [];
     const failed = [];
-    for (const ticker of launchTickers) {
-      try {
-        const report = await api("/api/analyses", {
-          method: "POST",
-          body: JSON.stringify({
-            ticker,
-            depth,
-            reportId: retrying ? activeReport.id : "",
-          }),
-        });
-        started.push(report);
-        upsertQueue(report);
-      } catch (error) {
-        failed.push({ ticker, error: error.message });
-        upsertQueue({ ticker, status: "error", error: error.message });
+    try {
+      for (const ticker of launchTickers) {
+        try {
+          const report = await api("/api/analyses", {
+            method: "POST",
+            body: JSON.stringify({
+              ticker,
+              depth,
+              reportId: retrying ? activeReport.id : "",
+            }),
+          });
+          started.push(report);
+          upsertQueue(report);
+        } catch (error) {
+          failed.push({ ticker, error: error.message });
+          upsertQueue({ ticker, status: "error", error: error.message });
+        }
       }
-    }
 
-    if (started.length) {
-      const first = started[0];
-      activeReportId = first.id;
-      activeReport = first;
-      currentJobText = started.length > 1 ? `已启动 ${started.length} 个分析任务，正在跟踪 ${first.ticker}` : `${first.ticker} 正在分析`;
-      jobStatus = failed.length ? "部分启动" : "分析中";
-      connectEvents(first.id);
-    } else {
-      jobStatus = "启动失败";
-      failed.forEach((item) => addLog({ stage: item.ticker, message: item.error, at: new Date().toISOString(), type: "error" }));
-    }
+      if (started.length) {
+        const first = started[0];
+        activeReportId = first.id;
+        activeReport = first;
+        currentJobText = started.length > 1 ? `已启动 ${started.length} 个分析任务，正在跟踪 ${first.ticker}` : `${first.ticker} 正在分析`;
+        jobStatus = failed.length ? "部分启动" : "分析中";
+        connectEvents(first.id);
+      } else {
+        jobStatus = "启动失败";
+        failed.forEach((item) => addLog({ stage: item.ticker, message: item.error, at: new Date().toISOString(), type: "error" }));
+      }
 
-    if (failed.length) logTab = "errors";
-    await loadReports();
+      if (failed.length) logTab = "errors";
+      await loadReports();
+    } finally {
+      isStartingAnalysis = false;
+    }
   }
 
   function resetRunUI(items = []) {
@@ -581,7 +591,7 @@
             </div>
             <div class="flex gap-2">
               <button class="btn btn-primary rounded-lg" type="button" disabled={!canStart} on:click={startAnalysis}>
-                {#if jobStatus === "分析中"}<Loader2 class="animate-spin" size={17} />{:else}<Play size={17} />{/if}
+                {#if isStartingAnalysis || activeReportRunning || jobStatus === "分析中"}<Loader2 class="animate-spin" size={17} />{:else}<Play size={17} />{/if}
                 {startButtonText}
               </button>
               <button class="btn btn-ghost rounded-lg" type="button" on:click={() => (tickerInput = "")}>清空</button>
@@ -672,7 +682,7 @@
             <div class="flex items-center gap-2">
               <span class="badge badge-lg {activeReport?.status ? statusBadgeClass(activeReport.status) : 'badge-info'}">{jobStatus}</span>
               {#if activeReport?.status === "error"}
-                <button class="btn btn-sm btn-outline rounded-lg" type="button" on:click={startAnalysis}>重新分析</button>
+                <button class="btn btn-sm btn-outline rounded-lg" type="button" disabled={!canStart} on:click={startAnalysis}>重新分析</button>
               {/if}
             </div>
           </div>

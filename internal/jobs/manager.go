@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -102,6 +103,8 @@ func (m *Manager) Start(ctx context.Context, req StartRequest) (storage.Report, 
 }
 
 func (m *Manager) Subscribe(jobID string) ([]storage.Event, <-chan storage.Event, func(), bool) {
+	m.MarkStaleAnalyses()
+
 	report, ok := m.store.Report(jobID)
 	if !ok {
 		return nil, nil, nil, false
@@ -130,16 +133,26 @@ func (m *Manager) Subscribe(jobID string) ([]storage.Event, <-chan storage.Event
 }
 
 func (m *Manager) run(ctx context.Context, report storage.Report, settings storage.Settings) {
+	startedAt := time.Now()
+	timeout := analysisTimeout()
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	select {
 	case m.slots <- struct{}{}:
 		defer func() { <-m.slots }()
 		m.emit(report.ID, newEvent(report.ID, "stage", "运行环境", "已获得分析执行资源，启动 TradingAgents", nil))
-	case <-ctx.Done():
+	case <-runCtx.Done():
+		msg := runCtx.Err().Error()
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			msg = analysisTimeoutMessage(timeout)
+		}
 		_, _ = m.store.UpdateReport(report.ID, func(r *storage.Report) {
 			r.Status = "error"
-			r.Error = ctx.Err().Error()
+			r.Error = msg
+			r.DurationSeconds = int64(time.Since(startedAt).Seconds())
 		})
-		m.emit(report.ID, newEvent(report.ID, "error", "失败", ctx.Err().Error(), nil))
+		m.emit(report.ID, newEvent(report.ID, "error", "失败", msg, nil))
 		return
 	}
 
@@ -152,7 +165,7 @@ func (m *Manager) run(ctx context.Context, report storage.Report, settings stora
 		Settings:    settings,
 	}
 
-	result, err := m.runner.Run(ctx, req, func(event storage.Event) {
+	result, err := m.runner.Run(runCtx, req, func(event storage.Event) {
 		if event.JobID == "" {
 			event.JobID = report.ID
 		}
@@ -164,6 +177,9 @@ func (m *Manager) run(ctx context.Context, report storage.Report, settings stora
 
 	if err != nil {
 		msg := err.Error()
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			msg = analysisTimeoutMessage(timeout)
+		}
 		_, _ = m.store.UpdateReport(report.ID, func(r *storage.Report) {
 			r.Status = "error"
 			r.Error = msg
@@ -181,6 +197,30 @@ func (m *Manager) run(ctx context.Context, report storage.Report, settings stora
 		r.DurationSeconds = int64(time.Since(start).Seconds())
 	})
 	m.emit(report.ID, newEvent(report.ID, "complete", "完成", "分析完成，报告已保存", map[string]interface{}{"decision": result.Decision}))
+}
+
+func (m *Manager) MarkStaleAnalyses() {
+	timeout := analysisTimeout()
+	cutoff := time.Now().Add(-timeout)
+	msg := analysisTimeoutMessage(timeout)
+	for _, report := range m.store.Reports("") {
+		if report.Status != "running" || report.UpdatedAt.After(cutoff) {
+			continue
+		}
+		updated, err := m.store.UpdateReport(report.ID, func(r *storage.Report) {
+			if r.Status != "running" {
+				return
+			}
+			r.Status = "error"
+			r.Error = msg
+			if r.DurationSeconds == 0 {
+				r.DurationSeconds = int64(time.Since(r.CreatedAt).Seconds())
+			}
+		})
+		if err == nil && updated.Status == "error" && updated.Error == msg {
+			m.emit(report.ID, newEvent(report.ID, "error", "失败", msg, nil))
+		}
+	}
 }
 
 func (m *Manager) emit(jobID string, event storage.Event) {
@@ -236,4 +276,28 @@ func maxConcurrentAnalyses() int {
 		return 1
 	}
 	return n
+}
+
+func analysisTimeout() time.Duration {
+	value := strings.TrimSpace(os.Getenv("APP_ANALYSIS_TIMEOUT"))
+	if value == "" {
+		return time.Hour
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		return time.Hour
+	}
+	return timeout
+}
+
+func analysisTimeoutMessage(timeout time.Duration) string {
+	if timeout%time.Hour == 0 {
+		hours := int(timeout / time.Hour)
+		return fmt.Sprintf("分析超过 %d 小时仍未完成，已自动标记为失败。", hours)
+	}
+	if timeout%time.Minute == 0 {
+		minutes := int(timeout / time.Minute)
+		return fmt.Sprintf("分析超过 %d 分钟仍未完成，已自动标记为失败。", minutes)
+	}
+	return fmt.Sprintf("分析超过 %d 秒仍未完成，已自动标记为失败。", int(timeout/time.Second))
 }

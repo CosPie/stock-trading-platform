@@ -68,10 +68,12 @@ func registerRoutes(f *fiber.App, opts Options) {
 	})
 
 	f.Get("/api/reports", func(c fiber.Ctx) error {
+		opts.Manager.MarkStaleAnalyses()
 		return c.JSON(opts.Store.Reports(c.Query("q")))
 	})
 
 	f.Get("/api/reports/:id", func(c fiber.Ctx) error {
+		opts.Manager.MarkStaleAnalyses()
 		report, ok := opts.Store.Report(c.Params("id"))
 		if !ok {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "报告不存在"})
