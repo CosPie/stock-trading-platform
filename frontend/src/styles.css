@@ -34,6 +34,7 @@ select {
 .report-content {
   max-width: 78ch;
   color: hsl(var(--bc));
+  overflow-wrap: anywhere;
 }
 
 .report-content > * + * {
@@ -166,9 +167,50 @@ select {
   outline: 2px solid hsl(var(--wa));
 }
 
-.brief-content :global(.container),
-.brief-content :global(main) {
+.brief-content {
+  max-width: min(78ch, 100%);
+}
+
+.brief-content section,
+.brief-content article,
+.brief-content div,
+.brief-content main,
+.brief-content .container {
   max-width: 100% !important;
+}
+
+.brief-content > section,
+.brief-content > article,
+.brief-content > div {
+  border: 1px solid hsl(var(--b3));
+  border-radius: 0.5rem;
+  background: hsl(var(--b1));
+  padding: clamp(1rem, 2vw, 1.6rem);
+}
+
+.brief-content h1 {
+  font-size: 2rem !important;
+}
+
+.brief-content h2 {
+  font-size: 1.35rem !important;
+}
+
+.brief-content h3 {
+  font-size: 1.1rem !important;
+}
+
+.brief-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.brief-content th,
+.brief-content td {
+  border-bottom: 1px solid hsl(var(--b3));
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+  vertical-align: top;
 }
 
 @media print {

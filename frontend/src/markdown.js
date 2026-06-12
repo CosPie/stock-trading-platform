@@ -122,11 +122,9 @@ export function renderMarkdown(text) {
 export function extractBriefMarkup(html) {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    const styles = Array.from(doc.head.querySelectorAll("style"))
-      .map((node) => node.outerHTML)
-      .join("");
+    doc.querySelectorAll("style, link[rel='stylesheet'], script, iframe").forEach((node) => node.remove());
     const body = doc.body?.innerHTML?.trim();
-    if (body) return `${styles}${body}`;
+    if (body) return body;
   } catch {
     // Fall through to raw HTML.
   }

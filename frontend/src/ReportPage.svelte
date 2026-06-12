@@ -252,35 +252,40 @@
 
 <div class="min-h-screen bg-base-200 text-base-content">
   <header class="sticky top-0 z-30 border-b border-base-300 bg-base-100/95 px-4 py-4 backdrop-blur">
-    <div class="mx-auto flex max-w-7xl flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-      <div class="flex items-start gap-4">
-        <a class="btn btn-ghost btn-sm rounded-lg" href="/"><ArrowLeft size={17} /> 返回首页</a>
-        <div>
+    <div class="mx-auto grid max-w-7xl gap-4">
+      <div class="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div class="flex min-w-0 items-start gap-3">
+          <a class="btn btn-ghost btn-sm shrink-0 rounded-lg" href="/"><ArrowLeft size={17} /> 返回首页</a>
+          <div class="min-w-0">
           <p class="text-sm font-semibold uppercase tracking-normal text-primary">TradingAgents 报告</p>
-          <h1 class="text-2xl font-bold leading-tight">{title}</h1>
+          <h1 class="truncate text-2xl font-bold leading-tight">{title}</h1>
           <p class="text-sm text-base-content/60">{meta}</p>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-end gap-2">
-        <label class="form-control w-64 max-w-full">
-          <span class="label-text">搜索报告</span>
-          <label class="input input-bordered flex h-10 items-center gap-2 rounded-lg bg-base-100">
-            <Search size={16} />
-            <input id="report-search" bind:value={searchQuery} on:input={scheduleSearch} on:keydown={handleSearchKeydown} type="search" class="grow" placeholder="搜索关键词" disabled={loading} />
-          </label>
-          <span class="label-text-alt">{searchCount}</span>
-        </label>
-        <div class="tabs tabs-boxed rounded-lg bg-base-200">
+        <div class="tabs tabs-boxed self-start rounded-lg bg-base-200">
           <button class="tab {view === 'brief' ? 'tab-active' : ''}" type="button" on:click={() => setView("brief")}>分析简报</button>
           <button class="tab {view === 'raw' ? 'tab-active' : ''}" type="button" on:click={() => setView("raw")}>原始报告</button>
         </div>
-        <button class="btn btn-outline btn-sm rounded-lg" type="button" on:click={copyReportLink}><Copy size={16} /> {copyText}</button>
-        <button class="btn btn-outline btn-sm rounded-lg" type="button" on:click={() => window.print()}><Printer size={16} /> 打印</button>
-        <button class="btn btn-primary btn-sm rounded-lg" type="button" disabled={!canGenerate} on:click={generateBrief}>
-          <Sparkles size={16} />
-          {generating ? "生成中..." : hasBrief ? "已生成分析简报" : "生成分析简报"}
-        </button>
+      </div>
+
+      <div class="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto] md:items-end">
+        <label class="form-control min-w-0">
+          <span class="label-text">搜索报告</span>
+          <label class="input input-bordered flex h-10 items-center gap-2 rounded-lg bg-base-100">
+            <Search class="shrink-0" size={16} />
+            <input id="report-search" bind:value={searchQuery} on:input={scheduleSearch} on:keydown={handleSearchKeydown} type="search" class="min-w-0 grow" placeholder="搜索关键词" disabled={loading} />
+          </label>
+          <span class="label-text-alt">{searchCount}</span>
+        </label>
+        <div class="flex flex-wrap items-center gap-2 md:justify-end">
+          <button class="btn btn-outline btn-sm rounded-lg" type="button" on:click={copyReportLink}><Copy size={16} /> {copyText}</button>
+          <button class="btn btn-outline btn-sm rounded-lg" type="button" on:click={() => window.print()}><Printer size={16} /> 打印</button>
+          <button class="btn btn-primary btn-sm rounded-lg" type="button" disabled={!canGenerate} on:click={generateBrief}>
+            <Sparkles size={16} />
+            {generating ? "生成中..." : hasBrief ? "已生成分析简报" : "生成分析简报"}
+          </button>
+        </div>
       </div>
     </div>
   </header>

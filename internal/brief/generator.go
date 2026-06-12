@@ -48,7 +48,7 @@ func (g *Generator) Generate(ctx context.Context, settings storage.Settings, rep
 要求：
 - 只输出 HTML 片段，不要输出 Markdown，不要用代码围栏。
 - 不要输出 script、外链 CSS、图片、iframe。
-- 用内联 <style> 写简洁样式，白底、深色文字、大字号、清晰间距。
+- 不要输出 <style>，只用语义化标签（section、h1、h2、h3、p、ul、ol、li、table、strong、em）。
 - 面向 50 岁以上投资小白，少用术语；必要术语必须解释。
 - 必须保留免责声明：仅供研究参考，不构成投资建议。
 - 结构包括：一句话结论、适合谁看、关键理由、主要风险、接下来观察什么、原始报告依据摘要。
