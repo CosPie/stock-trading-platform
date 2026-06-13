@@ -1,6 +1,7 @@
 data/app_state.json
 data/runtime/
 data/reports/
+web/
 .venv/
 node_modules/
 __pycache__/

@@ -55,6 +55,45 @@ def selected_analysts(asset_type):
     return analysts
 
 
+def load_zshrc_env(keys):
+    zshrc = Path.home() / ".zshrc"
+    if not zshrc.exists():
+        return
+    try:
+        lines = zshrc.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return
+    wanted = set(keys)
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in wanted or os.environ.get(key):
+            continue
+        os.environ[key] = clean_env_value(value)
+
+
+def clean_env_value(value):
+    value = value.strip()
+    if not value:
+        return ""
+    if value[0] in ("'", '"'):
+        quote = value[0]
+        end = value.rfind(quote)
+        if end > 0:
+            return value[1:end]
+        return value[1:].strip(quote)
+    if " #" in value:
+        value = value.split(" #", 1)[0]
+    return value.strip()
+
+
 def message_text(message):
     content = getattr(message, "content", None)
     if content is None and isinstance(message, (tuple, list)) and len(message) >= 2:
@@ -74,10 +113,26 @@ def first_text(value):
     return str(value or "")
 
 
-def build_report_markdown(ticker, date, final_state, decision):
+def intraday_instruction():
+    return (
+        " Trading style override: this run is for an intraday trader, not a multi-day investment report. "
+        "Prioritize same-session actionability: current trend, liquidity, volatility, opening gap behavior, "
+        "VWAP or moving-average context when available, support/resistance zones, news catalysts, sentiment shocks, "
+        "entry trigger, invalidation point, stop-loss discipline, partial-profit plan, and conditions for standing aside. "
+        "Treat fundamentals as background context only. Do not over-weight long-term valuation, quarterly projections, "
+        "or multi-month narratives when they conflict with intraday price action. If the available data is delayed, "
+        "daily-only, or insufficient for true intraday timing, state that limitation explicitly and avoid inventing "
+        "precise prices or minute-by-minute signals."
+    )
+
+
+def build_report_markdown(ticker, date, final_state, decision, analysis_mode="report"):
+    is_intraday = analysis_mode == "intraday"
+    title = "日内交易分析报告" if is_intraday else "股票分析报告"
     sections = [
-        f"# {ticker} 股票分析报告",
+        f"# {ticker} {title}",
         f"分析日期：{date}",
+        f"分析模式：{'日内交易' if is_intraday else '报告研判'}",
         "",
         "> 仅供研究参考，不构成投资建议。",
         "",
@@ -108,6 +163,7 @@ def main():
     parser.add_argument("--ticker", required=True)
     parser.add_argument("--date", required=True)
     parser.add_argument("--depth-rounds", type=int, required=True)
+    parser.add_argument("--analysis-mode", choices=["report", "intraday"], default="report")
     parser.add_argument("--provider", default="deepseek")
     parser.add_argument("--quick-model", default="deepseek-v4-flash")
     parser.add_argument("--deep-model", default="deepseek-v4-pro")
@@ -117,6 +173,10 @@ def main():
     parser.add_argument("--results-dir", required=True)
     parser.add_argument("--output-language", default="Simplified Chinese")
     args = parser.parse_args()
+    provider = args.provider.lower().strip()
+    load_zshrc_env(["DEEPSEEK_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"])
+    if provider == "local37" and not args.backend_url:
+        args.backend_url = os.environ.get("ANTHROPIC_BASE_URL", "")
 
     sys.path.insert(0, args.tradingagents_path)
 
@@ -145,13 +205,20 @@ def main():
         )
         return 2
 
-    if args.provider == "deepseek" and not os.environ.get("DEEPSEEK_API_KEY"):
+    if provider == "deepseek" and not os.environ.get("DEEPSEEK_API_KEY"):
         emit("error", "LLM 设置", "DeepSeek API Key 为空，请先在设置中保存 API Key")
         return 2
+    if provider == "local37":
+        if not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            emit("error", "LLM 设置", "本地 37 Provider 缺少 ANTHROPIC_AUTH_TOKEN，请确认 ~/.zshrc 已配置")
+            return 2
+        if not args.backend_url:
+            emit("error", "LLM 设置", "本地 37 Provider 缺少 ANTHROPIC_BASE_URL，请确认 ~/.zshrc 已配置")
+            return 2
 
     try:
         config = DEFAULT_CONFIG.copy()
-        config["llm_provider"] = args.provider
+        config["llm_provider"] = provider
         config["quick_think_llm"] = args.quick_model
         config["deep_think_llm"] = args.deep_model
         config["backend_url"] = args.backend_url or None
@@ -194,8 +261,8 @@ def main():
         emit(
             "start",
             "准备",
-            f"启动 TradingAgents：{args.ticker}，深度轮数 {args.depth_rounds}",
-            payload={"analysts": analysts, "asset_type": asset_type},
+            f"启动 TradingAgents：{args.ticker}，{'日内交易模式' if args.analysis_mode == 'intraday' else f'深度轮数 {args.depth_rounds}'}",
+            payload={"analysts": analysts, "asset_type": asset_type, "analysis_mode": args.analysis_mode},
         )
 
         graph = TradingAgentsGraph(selected_analysts=analysts, debug=True, config=config)
@@ -204,6 +271,8 @@ def main():
 
         past_context = graph.memory_log.get_past_context(args.ticker)
         instrument_context = graph.resolve_instrument_context(args.ticker, asset_type)
+        if args.analysis_mode == "intraday":
+            instrument_context += intraday_instruction()
         init_state = graph.propagator.create_initial_state(
             args.ticker,
             args.date,
@@ -249,7 +318,7 @@ def main():
             final_trade_decision=final_state["final_trade_decision"],
         )
         decision = graph.process_signal(final_state["final_trade_decision"])
-        report = build_report_markdown(args.ticker, args.date, final_state, decision)
+        report = build_report_markdown(args.ticker, args.date, final_state, decision, args.analysis_mode)
         summary = str(decision or final_state["final_trade_decision"]).strip()
 
         emit(

@@ -9,6 +9,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"stock-trading-platform/internal/envloader"
+)
+
+const (
+	ProviderDeepSeek = "deepseek"
+	ProviderLocal37  = "local37"
 )
 
 type Store struct {
@@ -43,7 +50,7 @@ func DefaultSettings(root string) Settings {
 	now := time.Now()
 	return Settings{
 		LLM: LLMSettings{
-			Provider:   "deepseek",
+			Provider:   ProviderDeepSeek,
 			QuickModel: "deepseek-v4-flash",
 			DeepModel:  "deepseek-v4-pro",
 			BackendURL: "https://api.deepseek.com",
@@ -73,7 +80,7 @@ func defaultPythonPath(root string) string {
 
 func applyEnvDefaults(settings *Settings, root string) {
 	if settings.LLM.APIKey == "" {
-		if key := os.Getenv("DEEPSEEK_API_KEY"); key != "" {
+		if key := envloader.Lookup("DEEPSEEK_API_KEY"); key != "" {
 			settings.LLM.APIKey = key
 		}
 	}
@@ -92,14 +99,21 @@ func (s *Store) SaveSettings(settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	settings.LastModified = time.Now()
+	settings.LLM.Provider = normalizeProvider(settings.LLM.Provider)
 	if settings.LLM.Provider == "" {
-		settings.LLM.Provider = "deepseek"
+		settings.LLM.Provider = ProviderDeepSeek
 	}
 	if settings.LLM.QuickModel == "" {
-		settings.LLM.QuickModel = "deepseek-v4-flash"
+		settings.LLM.QuickModel = defaultQuickModel(settings.LLM.Provider)
 	}
 	if settings.LLM.DeepModel == "" {
 		settings.LLM.DeepModel = "deepseek-v4-pro"
+	}
+	if settings.LLM.Provider == ProviderDeepSeek && settings.LLM.BackendURL == "" {
+		settings.LLM.BackendURL = "https://api.deepseek.com"
+	}
+	if settings.LLM.Provider == ProviderLocal37 && settings.LLM.BackendURL == "https://api.deepseek.com" {
+		settings.LLM.BackendURL = ""
 	}
 	if settings.Runtime.PythonPath == "" {
 		settings.Runtime.PythonPath = defaultPythonPath(s.root)
@@ -112,6 +126,24 @@ func (s *Store) SaveSettings(settings Settings) error {
 	}
 	s.state.Settings = settings
 	return s.saveLocked()
+}
+
+func normalizeProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", ProviderDeepSeek:
+		return ProviderDeepSeek
+	case ProviderLocal37, "37", "local-37":
+		return ProviderLocal37
+	default:
+		return strings.ToLower(strings.TrimSpace(provider))
+	}
+}
+
+func defaultQuickModel(provider string) string {
+	if provider == ProviderLocal37 {
+		return "deepseek-v4-pro"
+	}
+	return "deepseek-v4-flash"
 }
 
 func (s *Store) UpsertReport(report Report) error {

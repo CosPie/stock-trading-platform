@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"stock-trading-platform/internal/envloader"
 	"stock-trading-platform/internal/storage"
 )
 
@@ -20,11 +21,12 @@ type Runner struct {
 }
 
 type RunRequest struct {
-	JobID       string
-	Ticker      string
-	Date        string
-	DepthRounds int
-	Settings    storage.Settings
+	JobID        string
+	Ticker       string
+	Date         string
+	DepthRounds  int
+	AnalysisMode string
+	Settings     storage.Settings
 }
 
 type RunResult struct {
@@ -68,20 +70,31 @@ func (r *Runner) Run(ctx context.Context, req RunRequest, emit EmitFunc) (RunRes
 		return RunResult{}, err
 	}
 
+	provider := strings.ToLower(strings.TrimSpace(settings.LLM.Provider))
+	if provider == "" {
+		provider = storage.ProviderDeepSeek
+	}
+	backendURL := providerBackendURL(settings.LLM)
+	analysisMode := strings.TrimSpace(req.AnalysisMode)
+	if analysisMode == "" {
+		analysisMode = "report"
+	}
+
 	args := []string{
 		bridge,
 		"--ticker", req.Ticker,
 		"--date", req.Date,
 		"--depth-rounds", fmt.Sprintf("%d", req.DepthRounds),
-		"--provider", settings.LLM.Provider,
+		"--analysis-mode", analysisMode,
+		"--provider", provider,
 		"--quick-model", settings.LLM.QuickModel,
 		"--deep-model", settings.LLM.DeepModel,
 		"--tradingagents-path", tradingAgentsDir,
 		"--results-dir", resultsDir,
 		"--output-language", "Simplified Chinese",
 	}
-	if settings.LLM.BackendURL != "" {
-		args = append(args, "--backend-url", settings.LLM.BackendURL)
+	if backendURL != "" {
+		args = append(args, "--backend-url", backendURL)
 	}
 	if settings.LLM.Temperature != nil && *settings.LLM.Temperature != "" {
 		args = append(args, "--temperature", *settings.LLM.Temperature)
@@ -94,21 +107,23 @@ func (r *Runner) Run(ctx context.Context, req RunRequest, emit EmitFunc) (RunRes
 		"PYTHONUNBUFFERED=1",
 		"PYTHONPATH="+tradingAgentsDir,
 		"YF_DISABLE_CURL_CFFI=1",
-		"TRADINGAGENTS_LLM_PROVIDER="+settings.LLM.Provider,
+		"TRADINGAGENTS_LLM_PROVIDER="+provider,
 		"TRADINGAGENTS_QUICK_THINK_LLM="+settings.LLM.QuickModel,
 		"TRADINGAGENTS_DEEP_THINK_LLM="+settings.LLM.DeepModel,
 		"TRADINGAGENTS_RESULTS_DIR="+resultsDir,
 		"TRADINGAGENTS_OUTPUT_LANGUAGE=Simplified Chinese",
 	)
-	apiKey := strings.TrimSpace(settings.LLM.APIKey)
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	}
-	if apiKey != "" {
+	if apiKey := deepSeekAPIKey(settings.LLM); apiKey != "" {
 		cmd.Env = append(cmd.Env, "DEEPSEEK_API_KEY="+apiKey)
 	}
-	if settings.LLM.BackendURL != "" {
-		cmd.Env = append(cmd.Env, "TRADINGAGENTS_LLM_BACKEND_URL="+settings.LLM.BackendURL)
+	if token := local37Token(); token != "" {
+		cmd.Env = append(cmd.Env, "ANTHROPIC_AUTH_TOKEN="+token)
+	}
+	if baseURL := envloader.Lookup("ANTHROPIC_BASE_URL"); baseURL != "" {
+		cmd.Env = append(cmd.Env, "ANTHROPIC_BASE_URL="+baseURL)
+	}
+	if backendURL != "" {
+		cmd.Env = append(cmd.Env, "TRADINGAGENTS_LLM_BACKEND_URL="+backendURL)
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -200,6 +215,31 @@ func (r *Runner) Run(ctx context.Context, req RunRequest, emit EmitFunc) (RunRes
 		return RunResult{}, fmt.Errorf("TradingAgents 已结束，但没有返回报告内容")
 	}
 	return result, nil
+}
+
+func deepSeekAPIKey(settings storage.LLMSettings) string {
+	if strings.ToLower(strings.TrimSpace(settings.Provider)) != storage.ProviderDeepSeek {
+		return ""
+	}
+	if key := strings.TrimSpace(settings.APIKey); key != "" {
+		return key
+	}
+	return envloader.Lookup("DEEPSEEK_API_KEY")
+}
+
+func local37Token() string {
+	return envloader.Lookup("ANTHROPIC_AUTH_TOKEN")
+}
+
+func providerBackendURL(settings storage.LLMSettings) string {
+	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
+	if provider == storage.ProviderLocal37 {
+		if base := strings.TrimSpace(settings.BackendURL); base != "" && base != "https://api.deepseek.com" {
+			return base
+		}
+		return envloader.Lookup("ANTHROPIC_BASE_URL")
+	}
+	return strings.TrimSpace(settings.BackendURL)
 }
 
 func newStorageEvent(jobID string, typ string, stage string, message string, payload map[string]interface{}) storage.Event {

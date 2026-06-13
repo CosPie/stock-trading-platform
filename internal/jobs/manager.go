@@ -67,7 +67,7 @@ func (m *Manager) Start(ctx context.Context, req StartRequest) (storage.Report, 
 		return storage.Report{}, fmt.Errorf("股票代码只能包含字母、数字、点、横线、下划线和 ^")
 	}
 
-	depthLabel, rounds := depthRounds(req.Depth)
+	depthLabel, rounds, analysisMode := depthProfile(req.Depth)
 	analysisDate := strings.TrimSpace(req.Date)
 	if analysisDate == "" {
 		analysisDate = time.Now().Format("2006-01-02")
@@ -96,7 +96,11 @@ func (m *Manager) Start(ctx context.Context, req StartRequest) (storage.Report, 
 	}
 
 	settings := m.store.Settings()
-	m.emit(id, newEvent(id, "queued", "准备", "分析任务已创建，正在启动 TradingAgents", nil))
+	taskLabel := "分析任务"
+	if analysisMode == "intraday" {
+		taskLabel = "日内交易分析任务"
+	}
+	m.emit(id, newEvent(id, "queued", "准备", taskLabel+"已创建，正在启动 TradingAgents", map[string]interface{}{"analysis_mode": analysisMode}))
 
 	go m.run(context.Background(), report, settings)
 	return report, nil
@@ -158,11 +162,12 @@ func (m *Manager) run(ctx context.Context, report storage.Report, settings stora
 
 	start := time.Now()
 	req := trading.RunRequest{
-		JobID:       report.ID,
-		Ticker:      report.Ticker,
-		Date:        report.AnalysisDate,
-		DepthRounds: report.DepthRounds,
-		Settings:    settings,
+		JobID:        report.ID,
+		Ticker:       report.Ticker,
+		Date:         report.AnalysisDate,
+		DepthRounds:  report.DepthRounds,
+		AnalysisMode: analysisModeFromDepthLabel(report.Depth),
+		Settings:     settings,
 	}
 
 	result, err := m.runner.Run(runCtx, req, func(event storage.Event) {
@@ -250,15 +255,22 @@ func validTicker(ticker string) bool {
 	return regexp.MustCompile(`^[A-Z0-9._\-\^]{1,32}$`).MatchString(ticker)
 }
 
-func depthRounds(depth string) (string, int) {
+func depthProfile(depth string) (string, int, string) {
 	switch strings.ToLower(strings.TrimSpace(depth)) {
+	case "intraday", "daytrade", "day-trade", "日内":
+		return "日内", 1, "intraday"
 	case "medium", "中度":
-		return "中度", 3
+		return "中度", 3, "report"
 	case "deep", "depth", "深度":
-		return "深度", 5
+		return "深度", 5, "report"
 	default:
-		return "浅度", 1
+		return "浅度", 1, "report"
 	}
+}
+
+func analysisModeFromDepthLabel(depth string) string {
+	_, _, mode := depthProfile(depth)
+	return mode
 }
 
 func sanitizeID(value string) string {

@@ -33,6 +33,7 @@
     { key: "shallow", title: "浅度", hint: "更快" },
     { key: "medium", title: "中度", hint: "更稳" },
     { key: "deep", title: "深度", hint: "更细" },
+    { key: "intraday", title: "日内", hint: "看盘" },
   ];
   const statusFilters = [
     ["all", "全部"],
@@ -41,10 +42,30 @@
     ["error", "失败"],
   ];
   const settingsTabs = {
-    llm: ["LLM 模型", "配置 DeepSeek 模型，保存后下一次分析生效。"],
-    api: ["API Key", "可信内网环境中保存 DeepSeek API Key。"],
+    llm: ["LLM 模型", "选择官方 DeepSeek 或本地 37 Provider，保存后下一次分析生效。"],
+    api: ["API Key", "官方 DeepSeek 可保存 Key，本地 37 从 ~/.zshrc 读取。"],
     runtime: ["运行路径", "设置 Python 环境和 TradingAgents 子模块目录。"],
     ui: ["界面偏好", "调整字体和阅读体验。"],
+  };
+  const providerProfiles = {
+    deepseek: {
+      label: "官方 DeepSeek",
+      provider: "deepseek",
+      quickModel: "deepseek-v4-flash",
+      deepModel: "deepseek-v4-pro",
+      backendUrl: "https://api.deepseek.com",
+      quickOptions: ["deepseek-v4-flash", "deepseek-v4-pro"],
+      deepOptions: ["deepseek-v4-pro", "deepseek-v4-flash"],
+    },
+    local37: {
+      label: "本地 37",
+      provider: "local37",
+      quickModel: "deepseek-v4-pro",
+      deepModel: "deepseek-v4-pro",
+      backendUrl: "",
+      quickOptions: ["deepseek-v4-pro"],
+      deepOptions: ["deepseek-v4-pro"],
+    },
   };
 
   let depth = "shallow";
@@ -98,7 +119,8 @@
   $: latestReport = reports[0];
   $: comparisonReports = reports.filter((report) => report.status === "complete").slice(0, 8);
   $: queueReports = mergeQueueWithReports();
-  $: modelChip = settings?.llm?.deepModel ? `DeepSeek · ${settings.llm.deepModel}` : "DeepSeek · deepseek-v4-pro";
+  $: activeProvider = providerProfiles[form.provider] || providerProfiles.deepseek;
+  $: modelChip = settings?.llm?.deepModel ? `${providerLabel(settings.llm.provider)} · ${settings.llm.deepModel}` : "官方 DeepSeek · deepseek-v4-pro";
   $: retrying = activeReport && activeReport.status === "error";
   $: activeReportRunning = activeReport && activeReport.status === "running";
   $: canStart = !isStartingAnalysis && !activeReportRunning && (retrying || tickers.length > 0);
@@ -138,10 +160,12 @@
   }
 
   function fillSettings(value) {
+    const provider = value.llm?.provider || "deepseek";
+    const profile = providerProfiles[provider] || providerProfiles.deepseek;
     form = {
-      provider: value.llm?.provider || "deepseek",
-      quickModel: value.llm?.quickModel || "deepseek-v4-flash",
-      deepModel: value.llm?.deepModel || "deepseek-v4-pro",
+      provider,
+      quickModel: profile.quickOptions.includes(value.llm?.quickModel) ? value.llm.quickModel : profile.quickModel,
+      deepModel: profile.deepOptions.includes(value.llm?.deepModel) ? value.llm.deepModel : profile.deepModel,
       temperature: value.llm?.temperature || "",
       apiKey: "",
       pythonPath: value.runtime?.pythonPath || "python3",
@@ -152,14 +176,28 @@
     document.body.classList.toggle("large-text", form.largeText);
   }
 
+  function providerLabel(provider) {
+    return (providerProfiles[provider] || providerProfiles.deepseek).label;
+  }
+
+  function handleProviderChange(event) {
+    const profile = providerProfiles[event.currentTarget.value] || providerProfiles.deepseek;
+    form.provider = profile.provider;
+    form.quickModel = profile.quickModel;
+    form.deepModel = profile.deepModel;
+  }
+
   async function saveSettings() {
+    const profile = providerProfiles[form.provider] || providerProfiles.deepseek;
+    const quickModel = profile.quickOptions.includes(form.quickModel) ? form.quickModel : profile.quickModel;
+    const deepModel = profile.deepOptions.includes(form.deepModel) ? form.deepModel : profile.deepModel;
     const payload = {
       llm: {
-        provider: "deepseek",
+        provider: profile.provider,
         apiKey: form.apiKey.trim() || settings?.llm?.apiKey || "",
-        quickModel: form.quickModel,
-        deepModel: form.deepModel,
-        backendUrl: settings?.llm?.backendUrl || "https://api.deepseek.com",
+        quickModel,
+        deepModel,
+        backendUrl: profile.backendUrl,
         temperature: String(form.temperature || "").trim() || null,
       },
       runtime: {
@@ -581,7 +619,7 @@
           </div>
 
           <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div class="join grid grid-cols-3">
+            <div class="join grid grid-cols-2 sm:grid-cols-4">
               {#each depths as item}
                 <button class="btn join-item h-auto min-h-16 flex-col rounded-none {depth === item.key ? 'btn-primary' : 'btn-outline'}" type="button" on:click={() => (depth = item.key)}>
                   <strong>{item.title}</strong>
@@ -610,7 +648,7 @@
 
         <ol class="grid gap-3 rounded-lg border border-base-300 bg-base-100 p-4 text-sm shadow-sm">
           <li class="flex gap-3"><span class="badge badge-primary rounded-lg">1</span><span><strong>输入股票</strong><br /><span class="text-base-content/60">支持逗号、空格或换行分隔。</span></span></li>
-          <li class="flex gap-3"><span class="badge badge-primary rounded-lg">2</span><span><strong>选择深度</strong><br /><span class="text-base-content/60">浅度适合快速试跑，深度适合正式研判。</span></span></li>
+          <li class="flex gap-3"><span class="badge badge-primary rounded-lg">2</span><span><strong>选择模式</strong><br /><span class="text-base-content/60">浅度适合试跑，深度适合研判，日内适合看盘交易。</span></span></li>
           <li class="flex gap-3"><span class="badge badge-primary rounded-lg">3</span><span><strong>查看报告</strong><br /><span class="text-base-content/60">完成后生成简报、打开阅读页、横向对比。</span></span></li>
         </ol>
       </section>
@@ -822,13 +860,19 @@
 
           <form class="mt-5 grid gap-4" on:submit|preventDefault={saveSettings}>
             {#if settingsTab === "llm"}
-              <label class="form-control"><span class="label-text">Provider</span><input class="input input-bordered rounded-lg" bind:value={form.provider} readonly /></label>
-              <label class="form-control"><span class="label-text">快速模型</span><select class="select select-bordered rounded-lg" bind:value={form.quickModel}><option value="deepseek-v4-flash">deepseek-v4-flash</option><option value="deepseek-v4-pro">deepseek-v4-pro</option></select></label>
-              <label class="form-control"><span class="label-text">深度模型</span><select class="select select-bordered rounded-lg" bind:value={form.deepModel}><option value="deepseek-v4-pro">deepseek-v4-pro</option><option value="deepseek-v4-flash">deepseek-v4-flash</option></select></label>
+              <label class="form-control"><span class="label-text">Provider</span><select class="select select-bordered rounded-lg" bind:value={form.provider} on:change={handleProviderChange}><option value="deepseek">官方 DeepSeek</option><option value="local37">本地 37</option></select></label>
+              <label class="form-control"><span class="label-text">快速模型</span><select class="select select-bordered rounded-lg" bind:value={form.quickModel}>{#each activeProvider.quickOptions as model}<option value={model}>{model}</option>{/each}</select></label>
+              <label class="form-control"><span class="label-text">深度模型</span><select class="select select-bordered rounded-lg" bind:value={form.deepModel}>{#each activeProvider.deepOptions as model}<option value={model}>{model}</option>{/each}</select></label>
               <label class="form-control"><span class="label-text">Temperature</span><input class="input input-bordered rounded-lg" type="number" min="0" max="2" step="0.1" placeholder="留空使用默认" bind:value={form.temperature} /></label>
             {:else if settingsTab === "api"}
-              <label class="form-control"><span class="label-text">DeepSeek API Key</span><input class="input input-bordered rounded-lg" type="password" autocomplete="new-password" placeholder={settings?.llm?.apiKey ? "已保存，留空则保持当前 Key" : "sk-..."} bind:value={form.apiKey} /></label>
-              <p class="text-sm text-base-content/60">API Key 会保存在本机 data/app_state.json，适合可信内网环境。</p>
+              {#if form.provider === "local37"}
+                <div class="rounded-lg border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
+                  本地 37 Provider 会从 ~/.zshrc 读取 ANTHROPIC_AUTH_TOKEN 和 ANTHROPIC_BASE_URL。
+                </div>
+              {:else}
+                <label class="form-control"><span class="label-text">DeepSeek API Key</span><input class="input input-bordered rounded-lg" type="password" autocomplete="new-password" placeholder={settings?.llm?.apiKey ? "已保存，留空则保持当前 Key" : "sk-..."} bind:value={form.apiKey} /></label>
+                <p class="text-sm text-base-content/60">API Key 会保存在本机 data/app_state.json，适合可信内网环境。</p>
+              {/if}
             {:else if settingsTab === "runtime"}
               <label class="form-control"><span class="label-text">Python 命令</span><input class="input input-bordered rounded-lg" bind:value={form.pythonPath} placeholder="python3" /></label>
               <label class="form-control"><span class="label-text">TradingAgents 目录</span><input class="input input-bordered rounded-lg" bind:value={form.tradingAgentsDir} /></label>

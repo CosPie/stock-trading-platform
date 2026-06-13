@@ -31,11 +31,12 @@ export function parseTickers(value) {
 }
 
 export function depthText(depth) {
-  return { shallow: "浅度", medium: "中度", deep: "深度" }[depth] || "浅度";
+  return { shallow: "浅度", medium: "中度", deep: "深度", intraday: "日内" }[depth] || "浅度";
 }
 
 export function depthKey(depth) {
   const value = String(depth || "").toLowerCase();
+  if (value === "日内" || value === "intraday" || value === "daytrade" || value === "day-trade") return "intraday";
   if (value === "中度" || value === "medium") return "medium";
   if (value === "深度" || value === "deep" || value === "depth") return "deep";
   return "shallow";

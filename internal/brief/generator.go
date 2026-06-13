@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"stock-trading-platform/internal/envloader"
 	"stock-trading-platform/internal/storage"
 )
 
@@ -25,9 +26,13 @@ func NewGenerator() *Generator {
 }
 
 func (g *Generator) Generate(ctx context.Context, settings storage.Settings, report storage.Report) (string, error) {
-	apiKey := strings.TrimSpace(settings.LLM.APIKey)
+	provider := strings.ToLower(strings.TrimSpace(settings.LLM.Provider))
+	if provider == "" {
+		provider = storage.ProviderDeepSeek
+	}
+	apiKey := providerAPIKey(settings.LLM)
 	if apiKey == "" {
-		return "", fmt.Errorf("DeepSeek API Key 为空，请先在设置中保存 API Key")
+		return "", fmt.Errorf("%s API Key 为空，请先配置对应环境变量或在设置中保存 API Key", providerName(provider))
 	}
 	if strings.TrimSpace(report.ReportMarkdown) == "" {
 		return "", fmt.Errorf("原始报告为空，无法生成分析简报")
@@ -36,6 +41,10 @@ func (g *Generator) Generate(ctx context.Context, settings storage.Settings, rep
 	model := strings.TrimSpace(settings.LLM.DeepModel)
 	if model == "" {
 		model = "deepseek-v4-pro"
+	}
+	baseURL := providerBaseURL(settings.LLM)
+	if provider == storage.ProviderLocal37 && baseURL == "" {
+		return "", fmt.Errorf("本地 37 Provider 缺少 ANTHROPIC_BASE_URL，请确认 ~/.zshrc 已配置")
 	}
 
 	body := chatRequest{
@@ -70,7 +79,7 @@ func (g *Generator) Generate(ctx context.Context, settings storage.Settings, rep
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatURL(settings.LLM.BackendURL), bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, chatURL(baseURL), bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
@@ -79,21 +88,21 @@ func (g *Generator) Generate(ctx context.Context, settings storage.Settings, rep
 
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("调用 DeepSeek 失败：%w", err)
+		return "", fmt.Errorf("调用 %s 失败：%w", providerName(provider), err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("DeepSeek 返回错误 %d：%s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("%s 返回错误 %d：%s", providerName(provider), resp.StatusCode, string(respBody))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("解析 DeepSeek 返回失败：%w", err)
+		return "", fmt.Errorf("解析 %s 返回失败：%w", providerName(provider), err)
 	}
 	if len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
-		return "", fmt.Errorf("DeepSeek 没有返回简报内容")
+		return "", fmt.Errorf("%s 没有返回简报内容", providerName(provider))
 	}
 	return sanitizeHTML(parsed.Choices[0].Message.Content), nil
 }
@@ -113,6 +122,35 @@ type chatResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
+}
+
+func providerAPIKey(settings storage.LLMSettings) string {
+	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
+	if provider == storage.ProviderLocal37 {
+		return envloader.Lookup("ANTHROPIC_AUTH_TOKEN")
+	}
+	if key := strings.TrimSpace(settings.APIKey); key != "" {
+		return key
+	}
+	return envloader.Lookup("DEEPSEEK_API_KEY")
+}
+
+func providerBaseURL(settings storage.LLMSettings) string {
+	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
+	if provider == storage.ProviderLocal37 {
+		if base := strings.TrimSpace(settings.BackendURL); base != "" && base != "https://api.deepseek.com" {
+			return base
+		}
+		return envloader.Lookup("ANTHROPIC_BASE_URL")
+	}
+	return strings.TrimSpace(settings.BackendURL)
+}
+
+func providerName(provider string) string {
+	if provider == storage.ProviderLocal37 {
+		return "本地 37 Provider"
+	}
+	return "DeepSeek"
 }
 
 func chatURL(base string) string {

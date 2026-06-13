@@ -9,7 +9,7 @@
 - 使用 TradingAgents 内置角色流程，不在页面暴露角色配置
 - 实时显示 agent 进度和运行日志
 - 左侧历史报告搜索和回看
-- 左下角设置入口，保存 DeepSeek API Key 和模型配置
+- 左下角设置入口，可在官方 DeepSeek 与本地 37 Provider 间切换
 - 默认模型：
   - `deepseek-v4-flash`
   - `deepseek-v4-pro`
@@ -154,6 +154,17 @@ http://localhost:16666
 | `PORT` | Coolify 等平台注入的端口 | 未设置时使用 `16666` |
 | `APP_DATA_DIR` | 数据目录 | `/app/data`（容器内） |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key | 空（也可在 WebUI 设置页保存） |
+| `ANTHROPIC_AUTH_TOKEN` | 本地 37 Provider 访问 token，可从 `~/.zshrc` 读取 | 空 |
+| `ANTHROPIC_BASE_URL` | 本地 37 Provider API 地址，可从 `~/.zshrc` 读取 | 空 |
+
+### 本地 37 Provider
+
+设置页的 **LLM 模型** 可切换到“本地 37”。该模式使用模型 `deepseek-v4-pro`，不会使用保存的 DeepSeek API Key，而是从当前环境或 `~/.zshrc` 读取：
+
+```bash
+export ANTHROPIC_AUTH_TOKEN=...
+export ANTHROPIC_BASE_URL=...
+```
 
 ## 免责声明
 
