@@ -248,11 +248,50 @@ func (m *Manager) emit(jobID string, event storage.Event) {
 }
 
 func normalizeTicker(ticker string) string {
-	return strings.ToUpper(strings.TrimSpace(ticker))
+	normalized := strings.ToUpper(strings.TrimSpace(ticker))
+	if suffix := chinaTickerSuffix(normalized); suffix != "" {
+		return normalized + suffix
+	}
+	if strings.HasSuffix(normalized, ".SH") {
+		return strings.TrimSuffix(normalized, ".SH") + ".SS"
+	}
+	return normalized
 }
 
 func validTicker(ticker string) bool {
 	return regexp.MustCompile(`^[A-Z0-9._\-\^]{1,32}$`).MatchString(ticker)
+}
+
+func chinaTickerSuffix(ticker string) string {
+	if !regexp.MustCompile(`^\d{6}$`).MatchString(ticker) {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(ticker, "600"),
+		strings.HasPrefix(ticker, "601"),
+		strings.HasPrefix(ticker, "603"),
+		strings.HasPrefix(ticker, "605"),
+		strings.HasPrefix(ticker, "688"),
+		strings.HasPrefix(ticker, "689"),
+		strings.HasPrefix(ticker, "900"):
+		return ".SS"
+	case strings.HasPrefix(ticker, "000"),
+		strings.HasPrefix(ticker, "001"),
+		strings.HasPrefix(ticker, "002"),
+		strings.HasPrefix(ticker, "003"),
+		strings.HasPrefix(ticker, "200"),
+		strings.HasPrefix(ticker, "300"),
+		strings.HasPrefix(ticker, "301"):
+		return ".SZ"
+	case strings.HasPrefix(ticker, "43"),
+		strings.HasPrefix(ticker, "83"),
+		strings.HasPrefix(ticker, "87"),
+		strings.HasPrefix(ticker, "88"),
+		strings.HasPrefix(ticker, "920"):
+		return ".BJ"
+	default:
+		return ""
+	}
 }
 
 func depthProfile(depth string) (string, int, string) {

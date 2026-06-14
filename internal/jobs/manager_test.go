@@ -27,3 +27,26 @@ func TestDepthProfile(t *testing.T) {
 	}
 }
 
+func TestNormalizeTickerAddsChinaExchangeSuffix(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "002428", want: "002428.SZ"},
+		{input: "600519", want: "600519.SS"},
+		{input: "688981", want: "688981.SS"},
+		{input: "300750", want: "300750.SZ"},
+		{input: "830799", want: "830799.BJ"},
+		{input: "600519.SH", want: "600519.SS"},
+		{input: "0700.HK", want: "0700.HK"},
+		{input: "aapl", want: "AAPL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := normalizeTicker(tt.input); got != tt.want {
+				t.Fatalf("normalizeTicker(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

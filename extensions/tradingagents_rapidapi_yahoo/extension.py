@@ -36,7 +36,11 @@ def install_rapidapi_yahoo_extension(config: dict, ticker: str | None = None) ->
     for category in ("core_stock_apis", "technical_indicators", "news_data"):
         existing = data_vendors.get(category, "yfinance")
         env_key = f"TRADINGAGENTS_{category.upper()}_VENDOR_CHAIN"
-        data_vendors[category] = os.getenv(env_key, "").strip() or _prepend_vendor(existing, VENDOR_NAME)
+        override = os.getenv(env_key, "").strip()
+        if category == "news_data" and _is_china_ticker(ticker or "") and not override:
+            data_vendors[category] = _append_vendor(existing, VENDOR_NAME)
+        else:
+            data_vendors[category] = override or _prepend_vendor(existing, VENDOR_NAME)
 
     updated["data_vendors"] = data_vendors
     return updated
@@ -61,6 +65,21 @@ def _prepend_vendor(vendor_config: str, vendor: str) -> str:
     vendors = [part.strip() for part in str(vendor_config or "").split(",") if part.strip()]
     vendors = [part for part in vendors if part != vendor]
     return ",".join([vendor, *vendors])
+
+
+def _append_vendor(vendor_config: str, vendor: str) -> str:
+    vendors = [part.strip() for part in str(vendor_config or "").split(",") if part.strip()]
+    vendors = [part for part in vendors if part != vendor]
+    return ",".join([*vendors, vendor])
+
+
+def _is_china_ticker(ticker: str) -> bool:
+    try:
+        from extensions.tradingagents_china_news.sources import is_china_ticker
+
+        return is_china_ticker(ticker)
+    except Exception:
+        return False
 
 
 def _disabled() -> bool:

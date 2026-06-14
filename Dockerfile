@@ -36,19 +36,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
 COPY third_party/tradingagents ./third_party/tradingagents
-RUN python - <<'PY' > /tmp/tradingagents-constraints.txt
-import tomllib
-from pathlib import Path
-
-locked = {}
-for package in tomllib.loads(Path("third_party/tradingagents/uv.lock").read_text()).get("package", []):
-    name = package["name"]
-    if name != "tradingagents":
-        locked[name] = package["version"]
-
-for name in sorted(locked):
-    print(f"{name}=={locked[name]}")
-PY
+COPY scripts/export_tradingagents_constraints.py ./scripts/
+RUN python scripts/export_tradingagents_constraints.py
 RUN pip install --no-cache-dir --prefer-binary -c /tmp/tradingagents-constraints.txt ./third_party/tradingagents
 
 FROM python:3.12-slim
