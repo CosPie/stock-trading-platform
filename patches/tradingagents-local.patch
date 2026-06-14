@@ -1,4 +1,4 @@
-iff --git a/tests/test_reddit_fallback.py b/tests/test_reddit_fallback.py
+diff --git a/tests/test_reddit_fallback.py b/tests/test_reddit_fallback.py
 index 26f62cf..cebe737 100644
 --- a/tests/test_reddit_fallback.py
 +++ b/tests/test_reddit_fallback.py
@@ -25,8 +25,7 @@ index 4bbfb74..17f67f1 100644
          assert parse_rating("**Rating**: Underweight\nTrim exposure.") == "Underweight"
  
 +    def test_action_label_from_free_text_fallback(self):
-+        assert parse_rating("**Action**: Sell\n\n**Reasoning**: exit now*-+
-234567890.§.") == "Sell"
++        assert parse_rating("**Action**: Sell\n\n**Reasoning**: exit now.") == "Sell"
 +
 +    def test_final_transaction_proposal_label(self):
 +        assert parse_rating("FINAL TRANSACTION PROPOSAL: **SELL**") == "Sell"

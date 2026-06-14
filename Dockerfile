@@ -35,7 +35,12 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
+COPY patches/tradingagents-local.patch ./patches/
 COPY third_party/tradingagents ./third_party/tradingagents
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && git -C third_party/tradingagents apply ../patches/tradingagents-local.patch \
+ && rm -rf /var/lib/apt/lists/*
 COPY scripts/export_tradingagents_constraints.py ./scripts/
 RUN python scripts/export_tradingagents_constraints.py
 RUN pip install --no-cache-dir --prefer-binary -c /tmp/tradingagents-constraints.txt ./third_party/tradingagents
@@ -60,7 +65,7 @@ COPY --from=go-builder /out/server /app/server
 COPY --from=web-builder /out/web/ /app/web/
 COPY scripts/ /app/scripts/
 COPY extensions/ /app/extensions/
-COPY third_party/tradingagents/ /app/third_party/tradingagents/
+COPY --from=py-builder /build/third_party/tradingagents/ /app/third_party/tradingagents/
 
 RUN useradd --create-home --uid 1000 appuser \
  && install -d -m 0755 -o appuser -g appuser /app/data/runtime/tradingagents-results \
